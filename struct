@@ -1,0 +1,143 @@
+# Music-Upload-Assistant Project Structure
+
+```
+Music-Upload-Assistant/
+│
+├── music_upload_assistant.py          # Main entry point
+├── README.md                          # Project documentation
+├── LICENSE                            # License file
+├── requirements.txt                   # Dependencies
+├── setup.py                           # Package setup file
+│
+├── data/                              # Data directory
+│   ├── config.example.py              # Example configuration
+│   ├── config.py                      # User configuration (gitignored)
+│   │
+│   └── templates/                     # Description templates
+│       ├── default_album.txt          # Default album template
+│       ├── default_track.txt          # Default track template
+│       ├── flac_album.txt             # FLAC-specific album template
+│       ├── mp3_album.txt              # MP3-specific album template
+│       └── yus_default.txt            # YUS-specific template
+│
+├── modules/                           # Core modules
+│   │
+│   ├── audio_analyzer/                # Audio analysis
+│   │   ├── __init__.py
+│   │   ├── audio_analyzer.py          # Main analyzer class
+│   │   └── format_handlers/           # Format-specific handlers
+│   │       ├── __init__.py
+│   │       ├── base_handler.py        # Base handler class
+│   │       ├── flac_handler.py        # FLAC-specific handler
+│   │       ├── mp3_handler.py         # MP3-specific handler
+│   │       └── ...                    # Other format handlers
+│   │
+│   ├── metadata/                      # Metadata handling
+│   │   ├── __init__.py
+│   │   ├── tag_processor.py           # Tag extraction and writing
+│   │   ├── musicbrainz.py             # MusicBrainz integration
+│   │   ├── discogs.py                 # Discogs integration
+│   │   └── acoustid.py                # AcoustID integration
+│   │
+│   ├── quality/                       # Quality analysis
+│   │   ├── __init__.py
+│   │   ├── transcode_detector.py      # Transcode detection
+│   │   ├── dynamic_range.py           # Dynamic range calculation
+│   │   └── spectral_analysis.py       # Spectral analysis
+│   │
+│   ├── upload/                        # Upload functionality
+│   │   ├── __init__.py
+│   │   ├── torrent.py                 # Torrent creation
+│   │   ├── description.py             # Description generation
+│   │   └── trackers/                  # Tracker-specific modules
+│   │       ├── __init__.py
+│   │       ├── base_tracker.py        # Base tracker class
+│   │       ├── yus_tracker.py         # YUS tracker
+│   │       └── ...                    # Other tracker modules
+│   │
+│   └── utils/                         # Utility functions
+│       ├── __init__.py
+│       ├── file_utils.py              # File operations
+│       ├── image_utils.py             # Image processing
+│       └── logger.py                  # Logging setup
+│
+├── tests/                             # Unit tests
+│   ├── __init__.py
+│   ├── test_audio_analyzer.py
+│   ├── test_tag_processor.py
+│   └── ...                            # Other test modules
+│
+└── docs/                              # Documentation
+    ├── examples/                      # Example usage
+    │   ├── basic_usage.md
+    │   ├── album_upload.md
+    │   └── tracker_config.md
+    │
+    ├── templates/                     # Template documentation
+    │   ├── syntax.md
+    │   └── examples.md
+    │
+    └── trackers/                      # Tracker documentation
+        ├── yus.md
+        └── ...                        # Other tracker docs
+```
+
+## Implementation Details
+
+### Main Components
+
+1. **Audio Analyzer**
+   - Detects and analyzes various audio formats
+   - Extracts technical information (bit depth, sample rate, etc.)
+   - Performs quality analysis (dynamic range, spectral analysis)
+   - Detects potential issues (transcodes, upsampling)
+
+2. **Metadata Handler**
+   - Extracts metadata from different audio file formats
+   - Normalizes tags across formats (ID3, Vorbis Comments, etc.)
+   - Handles embedded artwork extraction
+   - Integrates with external databases (MusicBrainz, Discogs, AcoustID)
+
+3. **Description Generator**
+   - Creates formatted descriptions based on customizable templates
+   - Supports different formats for different trackers
+   - Handles both single track and album descriptions
+
+4. **Torrent Creator**
+   - Creates .torrent files for music uploads
+   - Supports both single-file and multi-file torrents
+   - Creates tracker-specific torrents with appropriate flags
+
+5. **Upload Manager**
+   - Handles uploading to various trackers
+   - Performs duplicate checking before upload
+   - Manages tracker-specific requirements and authentication
+
+### Configuration System
+
+All settings are managed through a central configuration file (`config.py`), which includes:
+
+- API keys for external services (MusicBrainz, Discogs, AcoustID)
+- Tracker credentials and settings
+- Default upload preferences
+- Torrent creation settings
+- File naming preferences
+
+### Template System
+
+Description templates use a simple variable substitution syntax:
+- Variables: `${variable_name}`
+- Conditionals: `[if:variable_name]content[endif]`
+
+Template variables are populated from metadata and quality analysis, providing a flexible way to create custom descriptions for different trackers.
+
+### Integration with External Services
+
+- **MusicBrainz**: For accurate metadata lookup
+- **Discogs**: For detailed release information
+- **AcoustID**: For audio fingerprinting and identification
+- **Cover Art Archive**: For album artwork
+
+### Tracker Support
+
+Initial support for the YUS tracker, with a modular design that makes it easy to add support for additional trackers.
