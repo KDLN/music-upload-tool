@@ -30,6 +30,7 @@ class YUSTracker:
         self.name = tracker_config.get('name', 'YU-Scene')
         self.url = tracker_config.get('url', 'https://yu-scene.net')
         self.api_key = tracker_config.get('api_key')
+        self.base_url = tr_cfg.get('base_url', 'https://yu-scene.net').rstrip('/')
         self.upload_url = f"{self.base_url}/torrents/create"
         self.announce_url = tracker_config.get('announce_url')
         self.source_name = tracker_config.get('source_name', 'YuScene')
