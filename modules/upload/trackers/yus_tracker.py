@@ -33,6 +33,7 @@ class YUSTracker:
         self.upload_url = tracker_config.get('upload_url')
         self.announce_url = tracker_config.get('announce_url')
         self.source_name = tracker_config.get('source_name', 'YuScene')
+        self.debug_mode = config.get('debug', False)
         
         # Check if we have the required config
         if not self.api_key:
@@ -129,20 +130,30 @@ class YUSTracker:
             files['cover'] = (os.path.basename(metadata['artwork_path']), 
                              open(metadata['artwork_path'], 'rb'), 'image/jpeg')
         
-        # For demonstration, just log the upload data
-        logger.info(f"Would upload to {self.upload_url} with data: {upload_data}")
-        logger.info(f"Would include files: {list(files.keys())}")
+        # Check for debug mode
+        if self.debug_mode:
+            logger.info(f"Debug mode: Would upload to {self.upload_url} with data: {upload_data}")
+            logger.info(f"Debug mode: Would include files: {list(files.keys())}")
+            return True, "Debug mode: Upload simulation successful"
         
-        # In a real implementation, this would make the request:
-        # try:
-        #     response = requests.post(self.upload_url, data=upload_data, files=files)
-        #     return response.ok, response.text
-        # except Exception as e:
-        #     logger.error(f"Error uploading to tracker: {e}")
-        #     return False, str(e)
-        
-        # For now, just simulate success
-        return True, "Upload simulation successful"
+        # Perform the actual upload
+        try:
+            response = requests.post(self.upload_url, data=upload_data, files=files)
+            
+            # Check if the upload was successful
+            if response.ok:
+                logger.info(f"Successfully uploaded to {self.name}: {response.text}")
+                return True, f"Successfully uploaded to {self.name}"
+            else:
+                logger.error(f"Error uploading to {self.name}: {response.status_code} - {response.text}")
+                return False, f"Error: {response.status_code} - {response.text}"
+        except Exception as e:
+            logger.error(f"Exception during upload to {self.name}: {str(e)}")
+            return False, f"Exception during upload: {str(e)}"
+        finally:
+            # Close file handles
+            for file in files.values():
+                file[1].close()
     
     def check_duplicate(self, metadata: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """

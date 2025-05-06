@@ -104,8 +104,19 @@ class TorrentCreator:
         # Generate output filename
         if os.path.isdir(path):
             base_name = os.path.basename(path)
+            # If base_name is empty (trailing slash), use the parent directory name
+            if not base_name:
+                base_name = os.path.basename(os.path.dirname(path))
         else:
             base_name = os.path.splitext(os.path.basename(path))[0]
+        
+        # Make sure we have a valid filename
+        if not base_name or base_name == ".":
+            # Fallback to using a timestamp if we can't get a name
+            base_name = f"album_{int(time.time())}"
+        
+        # Clean up the filename - replace invalid characters
+        base_name = self._sanitize_filename(base_name)
         
         output_name = f"{base_name}.torrent"
         output_dir = self.config.get('output_dir', os.path.dirname(path))
@@ -125,6 +136,30 @@ class TorrentCreator:
         except Exception as e:
             logger.error(f"Error creating torrent file: {e}")
             raise
+    
+    def _sanitize_filename(self, filename: str) -> str:
+        """
+        Sanitize a filename by removing invalid characters.
+        
+        Args:
+            filename: Original filename
+            
+        Returns:
+            str: Sanitized filename
+        """
+        # Replace characters that are problematic in filenames
+        invalid_chars = r'<>:"/\\|?*'
+        for char in invalid_chars:
+            filename = filename.replace(char, '_')
+        
+        # Remove leading/trailing spaces and dots
+        filename = filename.strip('. ')
+        
+        # If filename is empty after sanitizing, use a default
+        if not filename:
+            filename = f"album_{int(time.time())}"
+            
+        return filename
     
     def _calculate_piece_size(self, path: str) -> int:
         """
@@ -217,6 +252,12 @@ class TorrentCreator:
         """
         # Get the base name of the directory
         name = os.path.basename(dir_path)
+        if not name:  # Handle case with trailing slash
+            name = os.path.basename(os.path.dirname(dir_path))
+        
+        # Make sure we have a valid name
+        if not name or name == ".":
+            name = f"album_{int(time.time())}"
         
         # Build file list
         files = []

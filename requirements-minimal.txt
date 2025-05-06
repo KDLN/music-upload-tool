@@ -1,0 +1,14 @@
+# Essential dependencies for basic functionality
+requests
+mutagen
+pillow
+bencodepy
+
+# API clients (optional)
+musicbrainzngs
+
+# Minimal audio processing
+pyacoustid
+
+# Utilities
+colorama
