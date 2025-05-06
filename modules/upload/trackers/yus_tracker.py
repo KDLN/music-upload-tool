@@ -1,30 +1,23 @@
 import os
 import requests
 import logging
+from bs4 import BeautifulSoup
 from typing import Dict, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
 class YUSTracker:
     def __init__(self, config: Dict[str, Any]):
-        self.config  = config
-        self.api_key = config['trackers']['YUS']['api_key']
-
-        # Read raw, then replace any Unicode hyphens with ASCII
-        raw_base = config['trackers']['YUS'].get(
-            'base_url',
-            'https://yu-scene.net'
-        )
-        # Replace U+2010 and U+2011 with ASCII hyphen
-        clean_base = raw_base.replace('\u2010', '-').replace('\u2011', '-')
-        self.base_url   = clean_base.rstrip('/')
-        self.upload_url = f"{self.base_url}/torrents/create"
-
+        self.config     = config
+        tr_cfg          = config.get('trackers', {}).get('YUS', {})
+        self.api_key    = tr_cfg.get('api_key', '')
+        # We always greet the create form
+        self.create_url = "https://yu-scene.net/torrents/create"
         self.session    = requests.Session()
         self.debug_mode = config.get('debug', False)
 
     def is_configured(self) -> bool:
-        return bool(self.api_key and self.upload_url)
+        return bool(self.api_key)
 
     def upload(self,
                torrent_path: str,
@@ -34,46 +27,65 @@ class YUSTracker:
                format_id: str = None,
                media: str = None
     ) -> Tuple[bool, str]:
+        # Preconditions
         if not self.is_configured():
-            return False, "Tracker not properly configured"
+            return False, "Tracker not configured"
         if not os.path.exists(torrent_path):
-            return False, f"Torrent file not found: {torrent_path}"
+            return False, f"Torrent not found: {torrent_path}"
 
-        # Prepare form fields (API key goes in header)
-        upload_data = {
+        # 1) GET the form
+        resp_form = self.session.get(self.create_url)
+        if not resp_form.ok:
+            return False, f"Failed to fetch form: {resp_form.status_code}"
+
+        # 2) Parse CSRF token + form action
+        soup = BeautifulSoup(resp_form.text, 'html.parser')
+        form = soup.find('form', id='upload-form')
+        if not form:
+            return False, "Upload form not found in HTML"
+        action_url = form['action']  # e.g. "/torrents"
+        token = form.find('input', {'name': '_token'})['value']
+
+        # Build absolute POST URL
+        if action_url.startswith('http'):
+            post_url = action_url
+        else:
+            post_url = f"https://yu-scene.net{action_url}"
+
+        # 3) Build form data
+        data = {
+            '_token':      token,
             'title':       metadata.get('album', 'Unknown Album'),
             'description': description,
-            'anonymous':   str(int(self.config.get('trackers', {}).get('YUS', {}).get('anon', False))),
+            'anonymous':   str(int(self.config['trackers']['YUS'].get('anon', False))),
         }
 
-        # Determine 'cat' value
-        tr_cfg      = self.config['trackers']['YUS']
-        cat_ids     = tr_cfg.get('category_ids', {})
+        # Category → must match <select name="cat">
+        cat_ids = self.config['trackers']['YUS'].get('category_ids', {})
         if category:
-            cat_value = category
+            data['cat'] = category
         elif metadata.get('release_type'):
             rt = metadata['release_type'].upper()
-            cat_value = cat_ids.get(rt, cat_ids.get('ALBUM', '7'))
+            data['cat'] = cat_ids.get(rt, cat_ids.get('ALBUM', '7'))
         else:
-            cat_value = cat_ids.get('ALBUM', '7')
-        upload_data['cat'] = cat_value
+            data['cat'] = cat_ids.get('ALBUM', '7')
 
-        # Determine format field
-        fmt_ids = tr_cfg.get('format_ids', {})
+        # Format (name="format")
+        fmt_ids = self.config['trackers']['YUS'].get('format_ids', {})
         if format_id:
-            upload_data['format'] = format_id
+            data['format'] = format_id
         elif metadata.get('format'):
             f = metadata['format'].upper()
             if f in fmt_ids:
-                upload_data['format'] = fmt_ids[f]
+                data['format'] = fmt_ids[f]
 
-        # Determine media field
+        # Media (name="media")
         if media:
-            upload_data['media'] = media
+            data['media'] = media
         elif metadata.get('media'):
-            upload_data['media'] = metadata['media']
+            data['media'] = metadata['media']
 
-        # Prepare files
+        # 4) Prepare files
         files = {
             'torrent': (
                 os.path.basename(torrent_path),
@@ -81,45 +93,27 @@ class YUSTracker:
                 'application/x-bittorrent'
             )
         }
-        art_path = metadata.get('artwork_path')
-        if art_path and os.path.exists(art_path):
+        art = metadata.get('artwork_path')
+        if art and os.path.exists(art):
             files['cover'] = (
-                os.path.basename(art_path),
-                open(art_path, 'rb'),
+                os.path.basename(art),
+                open(art, 'rb'),
                 'image/jpeg'
             )
 
         # Debug simulation
         if self.debug_mode:
-            logger.info(f"Debug: upload to {self.upload_url} with {upload_data}")
-            logger.info(f"Debug: files {list(files.keys())}")
-            return True, "Debug mode: Upload simulation successful"
+            logger.info(f"DEBUG: POST to {post_url} data={list(data.keys())} files={list(files.keys())}")
+            return True, "Debug: would POST upload"
 
-        # Real upload with header auth
-        headers = {
-            'User-Agent':    'Music-Upload-Assistant/0.1.0',
-            'Authorization': f"Bearer {self.api_key}"
-        }
-
+        # 5) POST with cookies + CSRF
+        headers = {'User-Agent': 'Music-Upload-Assistant/0.1.0'}
         try:
-            response = self.session.post(
-                self.upload_url,
-                data=upload_data,
-                files=files,
-                headers=headers
-            )
-            if not response.ok:
-                msg = response.text[:200]
-                logger.error(f"Upload error {response.status_code}: {msg}")
-                return False, f"{response.status_code} - {msg}"
-
-            logger.info(f"Uploaded successfully: {response.text[:200]}")
+            resp = self.session.post(post_url, data=data, files=files, headers=headers)
+            if not resp.ok:
+                logger.error(f"Upload failed {resp.status_code}: {resp.text[:200]}")
+                return False, f"{resp.status_code} - {resp.text[:200]}"
             return True, "Upload successful"
-
-        except Exception as e:
-            logger.error(f"Upload exception: {e}")
-            return False, f"Exception during upload: {e}"
-
         finally:
-            for _, filetuple in files.items():
-                filetuple[1].close()
+            for f in files.values():
+                f[1].close()
