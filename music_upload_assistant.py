@@ -352,7 +352,11 @@ async def process_file(file_path: str, options: Dict[str, Any], config: Dict[str
                     source = tracker_config.get('source_name')
             
             # Generate standardized release name
-            release_name = generate_release_name(metadata, config, options)
+            # Check if perfect format is enabled in config
+            if config.get('description', {}).get('template', '') == 'perfect_album':
+                release_name = generate_perfect_name(metadata, config)
+            else:
+                release_name = generate_release_name(metadata, config, options)
             
             # Create torrent
             torrent_path = torrent_creator.create_torrent(
@@ -513,23 +517,57 @@ async def process_album(album_path: str, options: Dict[str, Any], config: Dict[s
     # Generate album description
     if options.get('generate_description', True):
         try:
-            description_generator = DescriptionGenerator(config)
-            
-            # Collect quality info from each track
-            quality_info = []
-            for result in track_results:
-                metadata = result['metadata']
-                quality_info.append({
-                    'title': metadata.get('title', 'Unknown'),
-                    'format': metadata.get('format', 'Unknown'),
-                    'sample_rate': f"{metadata.get('sample_rate', 0) / 1000:.1f} kHz",
-                    'bit_depth': f"{metadata.get('bit_depth', '')}",
-                    'channels': 'Stereo' if metadata.get('channels', 0) == 2 else 'Mono',
-                    'bitrate': f"{metadata.get('bitrate', 0)} kbps",
-                    'duration': time.strftime('%M:%S', time.gmtime(metadata.get('duration', 0)))
-                })
-            
-            description = description_generator.generate_album_description(album_metadata, quality_info)
+            # Check if perfect format is enabled
+            if config.get('description', {}).get('template', '') == 'perfect_album':
+                # Collect track info in the format needed for perfect description
+                track_info = []
+                for result in track_results:
+                    track_metadata = result['metadata']
+                    
+                    # Convert duration to string format
+                    duration_str = "00:00"
+                    if 'duration' in track_metadata:
+                        duration_seconds = track_metadata['duration']
+                        minutes = int(duration_seconds // 60)
+                        seconds = int(duration_seconds % 60)
+                        duration_str = f"{minutes:02d}:{seconds:02d}"
+                    
+                    # Calculate file size in bytes
+                    file_size_bytes = 0
+                    if 'file_size' in track_metadata:
+                        file_size_bytes = track_metadata['file_size']
+                    
+                    track_info.append({
+                        'title': track_metadata.get('title', 'Unknown'),
+                        'artists': track_metadata.get('artists', []),
+                        'track_number': track_metadata.get('track_number', 0),
+                        'disc_number': track_metadata.get('disc_number', 1),
+                        'duration': duration_str,
+                        'duration_seconds': track_metadata.get('duration', 0),
+                        'file_size_bytes': file_size_bytes
+                    })
+                
+                # Generate perfect description
+                description = generate_perfect_description(album_metadata, track_info, config)
+            else:
+                # Use standard description generator
+                description_generator = DescriptionGenerator(config)
+                
+                # Collect quality info from each track
+                quality_info = []
+                for result in track_results:
+                    metadata = result['metadata']
+                    quality_info.append({
+                        'title': metadata.get('title', 'Unknown'),
+                        'format': metadata.get('format', 'Unknown'),
+                        'sample_rate': f"{metadata.get('sample_rate', 0) / 1000:.1f} kHz",
+                        'bit_depth': f"{metadata.get('bit_depth', '')}",
+                        'channels': 'Stereo' if metadata.get('channels', 0) == 2 else 'Mono',
+                        'bitrate': f"{metadata.get('bitrate', 0)} kbps",
+                        'duration': time.strftime('%M:%S', time.gmtime(metadata.get('duration', 0)))
+                    })
+                
+                description = description_generator.generate_album_description(album_metadata, quality_info)
             
             description_path = os.path.join(temp_dir, "ALBUM_DESCRIPTION.txt")
             with open(description_path, 'w', encoding='utf-8') as f:
@@ -557,7 +595,11 @@ async def process_album(album_path: str, options: Dict[str, Any], config: Dict[s
                     source = tracker_config.get('source_name')
             
             # Generate standardized release name
-            release_name = generate_release_name(album_metadata, config, options)
+            # Check if perfect format is enabled in config
+            if config.get('description', {}).get('template', '') == 'perfect_album':
+                release_name = generate_perfect_name(album_metadata, config)
+            else:
+                release_name = generate_release_name(album_metadata, config, options)
             
             # Create torrent
             torrent_path = torrent_creator.create_torrent(
@@ -724,6 +766,8 @@ def parse_args():
                       help='Specify media source for release naming')
     parser.add_argument('--bitdepth', choices=['16', '24', '32'],
                       help='Specify bit depth for release naming')
+    parser.add_argument('--perfect', action='store_true',
+                      help='Use perfect upload format for naming and description')
     
     # Metadata sources
     parser.add_argument('--musicbrainz', action='store_true', 
@@ -801,6 +845,11 @@ async def main():
         
     if args.bitdepth:
         options['bitdepth_override'] = args.bitdepth
+    
+    # Handle perfect format option
+    if args.perfect:
+        config['description'] = config.get('description', {})
+        config['description']['template'] = 'perfect_album'
     
     # Handle qBittorrent options
     qbt_config = config.get('qbittorrent', {})

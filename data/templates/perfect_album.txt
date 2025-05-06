@@ -1,0 +1,24 @@
+---------------------------------------------------------------------
+                        ${album_artists} - ${album}
+---------------------------------------------------------------------
+Source...............: ${media} [if:media_img][img]${media_img}[/img][endif]
+Included.............: NFO, M3U, LOG (Folder.auCDtect)
+Channels.............: ${channels} / ${sample_rate} / ${bit_depth}
+Codec................: ${codec_desc}
+---------------------------------------------------------------------
+                       Tracklisting[if:disc_number] CD ${disc_number}[endif]
+---------------------------------------------------------------------
+${track_list}
+Playing Time.........: ${total_duration}
+Total Size...........: ${total_size}
+[if:disc_count]
+[for:disc_num in range(2, disc_count+1)]
+---------------------------------------------------------------------
+                       Tracklisting CD ${disc_num}
+---------------------------------------------------------------------
+${disc_track_lists[disc_num]}
+Playing Time.........: ${disc_durations[disc_num]}
+Total Size...........: ${disc_sizes[disc_num]}
+[endfor]
+[endif]
+NFO generated on.....: ${current_date} ${current_time}

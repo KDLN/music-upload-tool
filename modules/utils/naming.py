@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], options: Dict[str, Any] = None) -> str:
     """
     Generate a standardized release name based on metadata.
-    Follows format seen on trackers:
-    "Artist - Album (Year) FLAC"
+    Follows format:
+    "Artist-Album [Barcode-Number] Year Source BitDepth SampleRate Format-Uploader"
     
     Args:
         metadata: Track or album metadata
@@ -43,6 +43,10 @@ def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], opti
     
     album = metadata.get('album', 'Unknown Album')
     year = metadata.get('year', '')
+    barcode = metadata.get('barcode', metadata.get('catalog_number', ''))
+    
+    # Get uploader name from config
+    uploader = config.get('uploader_name', 'R&H')  # Default to R&H if not specified
     
     # Apply format override if specified
     if 'format_override' in options:
@@ -56,7 +60,7 @@ def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], opti
     if 'media_override' in options:
         media = options['media_override']
     else:
-        media = metadata.get('media', '')
+        media = metadata.get('media', 'WEB')  # Default to WEB if not specified
     
     # Apply bit depth override if specified
     if 'bitdepth_override' in options:
@@ -64,29 +68,59 @@ def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], opti
     elif 'bit_depth' in metadata and metadata['bit_depth']:
         bit_depth = str(metadata['bit_depth'])
     else:
-        bit_depth = ''
+        bit_depth = '16'  # Default to 16-bit if not specified
     
-    # Simple format - example: "Artist - Album (Year) FLAC"
-    # Based on your screenshot, this seems to be the preferred format
+    # Get sample rate
+    sample_rate = "44.1kHz"  # Default
+    if 'sample_rate' in metadata:
+        rate = metadata.get('sample_rate', 44100)
+        if isinstance(rate, (int, float)):
+            if rate == 44100:
+                sample_rate = "44.1kHz"
+            elif rate == 48000:
+                sample_rate = "48kHz"
+            elif rate == 88200:
+                sample_rate = "88.2kHz"
+            elif rate == 96000:
+                sample_rate = "96kHz"
+            elif rate == 176400:
+                sample_rate = "176.4kHz"
+            elif rate == 192000:
+                sample_rate = "192kHz"
+            else:
+                sample_rate = f"{rate/1000:.1f}kHz"
+    
+    # Remove spaces from artist and album
+    artist = artist.replace(' ', '.')
+    album = album.replace(' ', '.')
+    
+    # Format based on example: "INXS-The.Very.Best [Barcode-7935344] 2011 WEB 16bit 44.1kHz FLAC-R&H"
     parts = []
     
-    # Artist - Album
-    parts.append(f"{artist} - {album}")
+    # Artist-Album
+    parts.append(f"{artist}-{album}")
+    
+    # Add barcode if available
+    if barcode:
+        parts.append(f"[Barcode-{barcode}]")
     
     # Add year if available
     if year:
-        parts.append(f"({year})")
+        parts.append(str(year))
     
-    # Add format (FLAC, MP3, etc.)
+    # Add media source
+    parts.append(media)
+    
+    # Add technical specs
+    if format_type == 'FLAC':
+        parts.append(f"{bit_depth}bit")
+        parts.append(sample_rate)
+    
+    # Add format
     parts.append(format_type)
     
-    # For FLAC formats, add bit depth if available
-    if format_type == 'FLAC' and bit_depth:
-        parts[-1] += f" {bit_depth}-bit"
-    
-    # Add media source if specified (e.g., WEB, CD)
-    if media:
-        parts.append(media)
+    # Add uploader
+    parts.append(f"-{uploader}")
     
     # Join everything
     release_name = " ".join(parts)
