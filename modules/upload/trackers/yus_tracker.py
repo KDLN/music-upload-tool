@@ -210,10 +210,47 @@ class YUSTracker:
                 )
             # If using web form endpoint
             else:
-                # For web form, add token to the form data
-                data['_token'] = self.api_key
+                # For web form, we need to first GET the page to get CSRF token
+                try:
+                    logger.info(f"Getting form page from {self.upload_url}")
+                    form_page = self.session.get(self.upload_url)
+                    
+                    # Extract CSRF token from the page if possible
+                    if form_page.ok:
+                        import re
+                        csrf_match = re.search(r'name="_token"\s+value="([^"]+)"', form_page.text)
+                        if csrf_match:
+                            csrf_token = csrf_match.group(1)
+                            logger.info("Found CSRF token")
+                            data['_token'] = csrf_token
+                        else:
+                            # If no CSRF token found in page, use the API key as fallback
+                            data['_token'] = self.api_key
+                            logger.warning("No CSRF token found in page, using API key instead")
+                    else:
+                        logger.warning(f"Failed to get form page: {form_page.status_code}")
+                        data['_token'] = self.api_key
+                except Exception as e:
+                    logger.error(f"Error getting form page: {e}")
+                    data['_token'] = self.api_key
+                
+                # Use a different URL for the actual submission
+                # Form URLs usually have a different submission URL
+                post_url = self.upload_url
+                if post_url.endswith('/create'):
+                    # Change /create to /store which is common in web frameworks
+                    post_url = post_url.replace('/create', '/store')
+                    logger.info(f"Changed submission URL to {post_url}")
+                
+                # Add any needed headers for form submission
+                headers = {
+                    'Referer': self.upload_url,
+                    'Origin': '/'.join(self.upload_url.split('/')[:3])  # e.g., https://yu-scene.net
+                }
+                
                 response = self.session.post(
-                    url     = self.upload_url,
+                    url     = post_url,
+                    headers = headers,
                     data    = data,
                     files   = files
                 )
