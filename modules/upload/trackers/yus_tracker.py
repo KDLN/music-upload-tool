@@ -52,21 +52,7 @@ class YUSTracker:
         return bool(self.api_key and self.upload_url)
     
     def upload(self, torrent_path: str, description: str, metadata: Dict[str, Any],
-              category: str = None, format_id: str = None, media: str = None) -> Tuple[bool, str]:
-        """
-        Upload a torrent to the tracker.
-        
-        Args:
-            torrent_path: Path to the .torrent file
-            description: Upload description
-            metadata: File metadata
-            category: Upload category
-            format_id: Format identifier
-            media: Media type
-            
-        Returns:
-            tuple: (success, message)
-        """
+          category: str = None, format_id: str = None, media: str = None) -> Tuple[bool, str]:
         if not self.is_configured():
             return False, "Tracker not properly configured"
         
@@ -114,12 +100,6 @@ class YUSTracker:
         elif metadata.get('media'):
             upload_data['media'] = metadata['media']
         
-        # Validate required fields
-        required_fields = tracker_config.get('required_fields', [])
-        for field in required_fields:
-            if field not in upload_data and field not in metadata:
-                return False, f"Missing required field: {field}"
-        
         # Prepare files
         files = {
             'torrent': (os.path.basename(torrent_path), open(torrent_path, 'rb'), 'application/x-bittorrent')
@@ -128,21 +108,41 @@ class YUSTracker:
         # Add cover art if available
         if 'artwork_path' in metadata and os.path.exists(metadata['artwork_path']):
             files['cover'] = (os.path.basename(metadata['artwork_path']), 
-                             open(metadata['artwork_path'], 'rb'), 'image/jpeg')
+                            open(metadata['artwork_path'], 'rb'), 'image/jpeg')
         
-        # Check for debug mode
+        # Check if debug mode is enabled
         if self.debug_mode:
             logger.info(f"Debug mode: Would upload to {self.upload_url} with data: {upload_data}")
             logger.info(f"Debug mode: Would include files: {list(files.keys())}")
             return True, "Debug mode: Upload simulation successful"
         
-        # Perform the actual upload
+        # Try different authentication methods
         try:
-            response = requests.post(self.upload_url, data=upload_data, files=files)
+            # Method 1: API key in form data (current method)
+            headers = {
+                'User-Agent': 'Music-Upload-Assistant/0.1.0'
+            }
             
-            # Check if the upload was successful
+            response = requests.post(self.upload_url, data=upload_data, files=files, headers=headers)
+            
+            # Check if we got a login page
+            if "login" in response.text.lower() or "<form" in response.text.lower():
+                logger.warning("Got login page with API key in form data, trying API key in header")
+                
+                # Method 2: API key in header
+                headers['Authorization'] = f"Bearer {self.api_key}"
+                upload_data_no_key = {k: v for k, v in upload_data.items() if k != 'api_key'}
+                
+                response = requests.post(self.upload_url, data=upload_data_no_key, files=files, headers=headers)
+                
+                # Still got a login page?
+                if "login" in response.text.lower() or "<form" in response.text.lower():
+                    logger.error(f"Authentication failed: Received login page instead of success message")
+                    return False, "Authentication failed: API key may be invalid or expired"
+            
+            # If we get here, the response seems valid
             if response.ok:
-                logger.info(f"Successfully uploaded to {self.name}: {response.text}")
+                logger.info(f"Successfully uploaded to {self.name}: {response.text[:200]}...")
                 return True, f"Successfully uploaded to {self.name}"
             else:
                 logger.error(f"Error uploading to {self.name}: {response.status_code} - {response.text}")
