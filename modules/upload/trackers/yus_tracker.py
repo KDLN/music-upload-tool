@@ -7,20 +7,19 @@ logger = logging.getLogger(__name__)
 
 class YUSTracker:
     def __init__(self, config: Dict[str, Any]):
-        # Pull YUS settings from your main config
-        tr_cfg = config.get('trackers', {}).get('YUS', {})
-        self.config     = config
+        self.config  = config
+        self.api_key = config['trackers']['YUS']['api_key']
 
-        # Your API key for header auth
-        self.api_key = tr_cfg.get('api_key', '')
-
-        # Base URL for the site (default to yu‑scene.net)
-        self.base_url = tr_cfg.get('base_url', 'https://yu-scene.net').rstrip('/')
-
-        # POST to the UI form endpoint, not /api
+        # Read raw, then replace any Unicode hyphens with ASCII
+        raw_base = config['trackers']['YUS'].get(
+            'base_url',
+            'https://yu-scene.net'
+        )
+        # Replace U+2010 and U+2011 with ASCII hyphen
+        clean_base = raw_base.replace('\u2010', '-').replace('\u2011', '-')
+        self.base_url   = clean_base.rstrip('/')
         self.upload_url = f"{self.base_url}/torrents/create"
 
-        # HTTP session + debug flag
         self.session    = requests.Session()
         self.debug_mode = config.get('debug', False)
 
