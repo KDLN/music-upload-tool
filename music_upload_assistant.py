@@ -28,6 +28,8 @@ from modules.utils.file_utils import (
     create_output_directory, copy_file_with_metadata
 )
 from modules.utils.naming import generate_release_name
+from modules.utils.config_manager import ConfigManager
+from modules.upload.tracker_manager import TrackerManager
 
 # Import torrent client modules
 try:
@@ -89,7 +91,7 @@ def setup_logging(config: Dict[str, Any]):
 
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     """
-    Load configuration from a file.
+    Load configuration from a file using the ConfigManager.
     
     Args:
         config_path: Path to the config file
@@ -97,87 +99,11 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     Returns:
         dict: Configuration dictionary
     """
-    # Default config
-    default_config = {
-        'app_name': 'Music-Upload-Assistant',
-        'app_version': '0.1.0',
-        'templates_dir': os.path.join('data', 'templates'),
-        'temp_dir': 'temp',
-        'output_dir': 'output',
-        'logging': {
-            'level': 'INFO',
-            'file': 'music_upload_assistant.log'
-        }
-    }
+    # Create a config manager
+    config_manager = ConfigManager(config_path)
     
-    # If no config path provided, look in default locations
-    if not config_path:
-        for path in ['config.py', os.path.join('data', 'config.py')]:
-            if os.path.exists(path):
-                config_path = path
-                break
-    
-    # If config file exists, load it
-    if config_path and os.path.exists(config_path):
-        try:
-            # For Python-based config
-            if config_path.endswith('.py'):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config_content = f.read()
-                
-                # Extract the config dictionary using exec
-                config_dict = {}
-                exec(config_content, config_dict)
-                
-                if 'config' in config_dict:
-                    loaded_config = config_dict['config']
-                else:
-                    # Try to find a dictionary assignment in the file
-                    for key, value in config_dict.items():
-                        if isinstance(value, dict) and key != '__builtins__':
-                            loaded_config = value
-                            break
-                    else:
-                        logger.warning(f"Could not find config dictionary in {config_path}")
-                        loaded_config = {}
-            
-            # For JSON-based config
-            elif config_path.endswith('.json'):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    loaded_config = json.load(f)
-            
-            # Update default config with loaded config
-            deep_update(default_config, loaded_config)
-            logger.info(f"Loaded configuration from {config_path}")
-        
-        except Exception as e:
-            logger.error(f"Error loading config from {config_path}: {e}")
-            logger.warning("Using default configuration")
-    else:
-        if config_path:
-            logger.warning(f"Config file not found: {config_path}")
-        logger.info("Using default configuration")
-    
-    return default_config
-
-
-def deep_update(d: Dict, u: Dict) -> Dict:
-    """
-    Recursively update a dictionary with another dictionary.
-    
-    Args:
-        d: Base dictionary to update
-        u: Dictionary with updates
-        
-    Returns:
-        dict: Updated dictionary
-    """
-    for k, v in u.items():
-        if isinstance(v, dict) and k in d and isinstance(d[k], dict):
-            deep_update(d[k], v)
-        else:
-            d[k] = v
-    return d
+    # Return the loaded config
+    return config_manager.get_config()
 
 
 def format_handler_factory(file_path: str) -> Optional[Any]:
@@ -405,16 +331,12 @@ async def process_file(file_path: str, options: Dict[str, Any], config: Dict[str
     # Upload to tracker if requested
     if options.get('upload', False) and options.get('tracker'):
         try:
-            # Import the appropriate tracker module
+            # Use tracker manager to get the tracker
             tracker_id = options.get('tracker')
-            tracker_module = None
+            tracker_manager = TrackerManager(config)
+            tracker_module = tracker_manager.get_tracker(tracker_id)
             
-            if tracker_id == 'YUS':
-                from modules.upload.trackers.yus_tracker import YUSTracker
-                tracker_module = YUSTracker(config)
-            # Add more trackers as they are implemented
-            
-            if tracker_module and tracker_module.is_configured():
+            if tracker_module:
                 # Get description
                 description_path = metadata.get('description_path')
                 if description_path and os.path.exists(description_path):
@@ -437,7 +359,13 @@ async def process_file(file_path: str, options: Dict[str, Any], config: Dict[str
                 else:
                     logger.error(f"Torrent file not found for upload: {torrent_path}")
             else:
-                logger.warning(f"Tracker {tracker_id} not available or not configured")
+                # If no available tracker, show available ones
+                available_trackers = tracker_manager.get_available_trackers()
+                if available_trackers:
+                    logger.warning(f"Tracker {tracker_id} not available. Available trackers: {', '.join(available_trackers)}")
+                else:
+                    logger.warning(f"No trackers are configured and available")
+                    
                 logger.info(f"Would upload to tracker: {options['tracker']}")
                 metadata['uploaded'] = False
         except Exception as e:
@@ -649,16 +577,12 @@ async def process_album(album_path: str, options: Dict[str, Any], config: Dict[s
     # Upload to tracker if requested
     if options.get('upload', False) and options.get('tracker'):
         try:
-            # Import the appropriate tracker module
+            # Use tracker manager to get the tracker
             tracker_id = options.get('tracker')
-            tracker_module = None
+            tracker_manager = TrackerManager(config)
+            tracker_module = tracker_manager.get_tracker(tracker_id)
             
-            if tracker_id == 'YUS':
-                from modules.upload.trackers.yus_tracker import YUSTracker
-                tracker_module = YUSTracker(config)
-            # Add more trackers as they are implemented
-            
-            if tracker_module and tracker_module.is_configured():
+            if tracker_module:
                 # Get description
                 description_path = album_metadata.get('description_path')
                 if description_path and os.path.exists(description_path):
@@ -681,7 +605,13 @@ async def process_album(album_path: str, options: Dict[str, Any], config: Dict[s
                 else:
                     logger.error(f"Album torrent file not found for upload: {torrent_path}")
             else:
-                logger.warning(f"Tracker {tracker_id} not available or not configured")
+                # If no available tracker, show available ones
+                available_trackers = tracker_manager.get_available_trackers()
+                if available_trackers:
+                    logger.warning(f"Tracker {tracker_id} not available. Available trackers: {', '.join(available_trackers)}")
+                else:
+                    logger.warning(f"No trackers are configured and available")
+                    
                 logger.info(f"Would upload album to tracker: {options['tracker']}")
                 album_metadata['uploaded'] = False
         except Exception as e:

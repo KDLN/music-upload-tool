@@ -1,0 +1,69 @@
+{
+    "app_name": "Music-Upload-Assistant",
+    "app_version": "0.2.0",
+    "uploader_name": "",
+    "templates_dir": "data/templates",
+    "temp_dir": "temp",
+    "output_dir": "output",
+    "description": {
+        "template": "default_album",
+        "include_cover_in_description": true
+    },
+    "trackers": {
+        "YUS": {
+            "enabled": false,
+            "name": "YU-Scene",
+            "url": "https://yu-scene.net",
+            "announce_url": "https://yu-scene.net/announce",
+            "api_key": "",
+            "upload_url": "https://yu-scene.net/api/torrents/upload",
+            "source_name": "YuScene",
+            "anon": false,
+            "category_ids": {
+                "ALBUM": "7",
+                "SINGLE": "8",
+                "EP": "9",
+                "COMPILATION": "10",
+                "SOUNDTRACK": "11",
+                "LIVE": "12",
+                "REMIX": "13",
+                "BOOTLEG": "14",
+                "INTERVIEW": "15",
+                "MIXTAPE": "16"
+            },
+            "format_ids": {
+                "FLAC": "1",
+                "MP3": "2",
+                "AAC": "3",
+                "AC3": "4",
+                "DTS": "5",
+                "OGG": "6",
+                "ALAC": "7",
+                "DSD": "8", 
+                "WAV": "9",
+                "MQA": "10"
+            },
+            "description_template": "yus_default.txt"
+        }
+    },
+    "torrent": {
+        "piece_size": "auto",
+        "private": true,
+        "comment": "Created with Music-Upload-Assistant"
+    },
+    "qbittorrent": {
+        "enabled": false,
+        "host": "http://localhost:8080",
+        "username": "",
+        "password": "",
+        "auto_start": true,
+        "default_save_path": "",
+        "use_original_path": true
+    },
+    "logging": {
+        "level": "INFO",
+        "file": "music_upload_assistant.log",
+        "max_size": 5242880,
+        "backup_count": 3
+    }
+}

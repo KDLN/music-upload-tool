@@ -46,7 +46,10 @@ def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], opti
     barcode = metadata.get('barcode', metadata.get('catalog_number', ''))
     
     # Get uploader name from config
-    uploader = config.get('uploader_name', 'R&H')  # Default to R&H if not specified
+    uploader = config.get('uploader_name', '')  # Default to empty if not specified
+    
+    # Only include uploader tag if it's set
+    include_uploader = uploader and len(uploader.strip()) > 0
     
     # Apply format override if specified
     if 'format_override' in options:
@@ -119,8 +122,9 @@ def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], opti
     # Add format
     parts.append(format_type)
     
-    # Add uploader
-    parts.append(f"-{uploader}")
+    # Add uploader only if it's set
+    if include_uploader:
+        parts.append(f"-{uploader}")
     
     # Join everything
     release_name = " ".join(parts)
