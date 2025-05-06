@@ -28,6 +28,13 @@ from modules.utils.file_utils import (
     create_output_directory, copy_file_with_metadata
 )
 
+# Import torrent client modules
+try:
+    from modules.upload.clients.qbittorrent import QBittorrentClient
+except ImportError as e:
+    logger.warning(f"qBittorrent client module not available: {e}")
+    logger.warning("Torrent client features will be disabled")
+
 # Set up logger
 logger = logging.getLogger("music_upload_assistant")
 
@@ -332,6 +339,31 @@ async def process_file(file_path: str, options: Dict[str, Any], config: Dict[str
             
             metadata['torrent_path'] = torrent_path
             logger.info(f"Created torrent: {torrent_path}")
+            
+            # Add to qBittorrent if enabled
+            qbt_config = config.get('qbittorrent', {})
+            if qbt_config.get('enabled', False):
+                try:
+                    qbt_client = QBittorrentClient(config)
+                    
+                    # Determine save path
+                    save_path = None
+                    if qbt_config.get('use_original_path', True):
+                        # Use the directory containing the original file
+                        save_path = os.path.dirname(os.path.abspath(file_path))
+                        
+                    # Add to qBittorrent
+                    success, message = qbt_client.add_torrent(torrent_path, save_path)
+                    if success:
+                        logger.info(f"Added torrent to qBittorrent: {message}")
+                        metadata['added_to_client'] = True
+                    else:
+                        logger.error(f"Failed to add torrent to qBittorrent: {message}")
+                        metadata['added_to_client'] = False
+                except Exception as e:
+                    logger.error(f"Error adding torrent to qBittorrent: {e}")
+                    metadata['added_to_client'] = False
+            
         except Exception as e:
             logger.error(f"Error creating torrent: {e}")
     
@@ -505,6 +537,31 @@ async def process_album(album_path: str, options: Dict[str, Any], config: Dict[s
             
             album_metadata['torrent_path'] = torrent_path
             logger.info(f"Created album torrent: {torrent_path}")
+            
+            # Add to qBittorrent if enabled
+            qbt_config = config.get('qbittorrent', {})
+            if qbt_config.get('enabled', False):
+                try:
+                    qbt_client = QBittorrentClient(config)
+                    
+                    # Determine save path
+                    save_path = None
+                    if qbt_config.get('use_original_path', True):
+                        # Use the directory containing the album
+                        save_path = os.path.abspath(album_path)
+                        
+                    # Add to qBittorrent
+                    success, message = qbt_client.add_torrent(torrent_path, save_path)
+                    if success:
+                        logger.info(f"Added album torrent to qBittorrent: {message}")
+                        album_metadata['added_to_client'] = True
+                    else:
+                        logger.error(f"Failed to add album torrent to qBittorrent: {message}")
+                        album_metadata['added_to_client'] = False
+                except Exception as e:
+                    logger.error(f"Error adding album torrent to qBittorrent: {e}")
+                    album_metadata['added_to_client'] = False
+                    
         except Exception as e:
             logger.error(f"Error creating album torrent: {e}")
     
@@ -634,6 +691,10 @@ def parse_args():
                       help='Torrent piece size in KB')
     parser.add_argument('--announce-url', 
                       help='Tracker announce URL for torrent')
+    parser.add_argument('--add-to-client', action='store_true',
+                      help='Add torrent to configured client (qBittorrent)')
+    parser.add_argument('--no-add-to-client', action='store_true',
+                      help='Do not add torrent to client even if enabled in config')
     
     # Output options
     parser.add_argument('--output', '-o', 
@@ -683,6 +744,17 @@ async def main():
         'debug': args.debug,
         'generate_description': True
     }
+    
+    # Handle qBittorrent options
+    qbt_config = config.get('qbittorrent', {})
+    if args.add_to_client:
+        # Enable qBittorrent even if disabled in config
+        qbt_config['enabled'] = True
+        config['qbittorrent'] = qbt_config
+    elif args.no_add_to_client:
+        # Disable qBittorrent even if enabled in config
+        qbt_config['enabled'] = False
+        config['qbittorrent'] = qbt_config
     
     if args.piece_size:
         options['piece_size'] = args.piece_size
@@ -739,6 +811,9 @@ async def main():
                 
                 if result['metadata'].get('uploaded', False):
                     print(f"Uploaded to: {options['tracker']}")
+                    
+                if result['metadata'].get('added_to_client', False):
+                    print("Added to qBittorrent for seeding")
                 
                 print("\nProcessed Tracks:")
                 for i, track in enumerate(result['track_results']):
@@ -761,6 +836,9 @@ async def main():
                 
                 if metadata.get('uploaded', False):
                     print(f"Uploaded to: {options['tracker']}")
+                    
+                if metadata.get('added_to_client', False):
+                    print("Added to qBittorrent for seeding")
         
         # Copy description to output file if requested
         if args.output:
