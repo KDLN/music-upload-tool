@@ -81,13 +81,25 @@ class YUSTracker:
                 'application/x-bittorrent'
             )
         }
-        art = metadata.get('artwork_path')
-        if art and os.path.exists(art):
+        
+        # Look for cover art in multiple possible locations
+        cover_path = None
+        
+        # First check if we have a path to album art
+        if 'artwork_path' in metadata and os.path.exists(metadata['artwork_path']):
+            cover_path = metadata['artwork_path']
+        # Then check for cover art path
+        elif 'cover_art_path' in metadata and os.path.exists(metadata['cover_art_path']):
+            cover_path = metadata['cover_art_path']
+        
+        # Add cover art to upload if found
+        if cover_path and os.path.exists(cover_path):
             files['cover'] = (
-                os.path.basename(art),
-                open(art, 'rb'),
-                'image/jpeg'
+                os.path.basename(cover_path),
+                open(cover_path, 'rb'),
+                'image/jpeg' if cover_path.lower().endswith('.jpg') or cover_path.lower().endswith('.jpeg') else 'image/png'
             )
+            logger.info(f"Adding cover art to tracker upload: {cover_path}")
 
         # Debug mode: just print what would happen
         if self.debug_mode:

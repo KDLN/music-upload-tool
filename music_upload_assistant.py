@@ -27,6 +27,7 @@ from modules.utils.file_utils import (
     find_audio_files, get_album_structure, find_cover_art, 
     create_output_directory, copy_file_with_metadata
 )
+from modules.utils.naming import generate_release_name
 
 # Import torrent client modules
 try:
@@ -328,16 +329,21 @@ async def process_file(file_path: str, options: Dict[str, Any], config: Dict[str
                     announce_url = tracker_config.get('announce_url', announce_url)
                     source = tracker_config.get('source_name')
             
+            # Generate standardized release name
+            release_name = generate_release_name(metadata, config, options)
+            
             # Create torrent
             torrent_path = torrent_creator.create_torrent(
                 file_path,
                 announce_url=announce_url,
                 source=source,
                 comment=f"{metadata.get('title', 'Unknown')} - {metadata.get('artists', ['Unknown'])[0]}",
-                piece_size=options.get('piece_size', 'auto')
+                piece_size=options.get('piece_size', 'auto'),
+                custom_name=release_name
             )
             
             metadata['torrent_path'] = torrent_path
+            metadata['release_name'] = release_name
             logger.info(f"Created torrent: {torrent_path}")
             
             # Add to qBittorrent if enabled
@@ -351,9 +357,12 @@ async def process_file(file_path: str, options: Dict[str, Any], config: Dict[str
                     if qbt_config.get('use_original_path', True):
                         # Use the directory containing the original file
                         save_path = os.path.dirname(os.path.abspath(file_path))
-                        
+                    
+                    # Get cover art path if available
+                    cover_path = metadata.get('artwork_path')
+                    
                     # Add to qBittorrent
-                    success, message = qbt_client.add_torrent(torrent_path, save_path)
+                    success, message = qbt_client.add_torrent(torrent_path, save_path, cover_path)
                     if success:
                         logger.info(f"Added torrent to qBittorrent: {message}")
                         metadata['added_to_client'] = True
@@ -525,6 +534,9 @@ async def process_album(album_path: str, options: Dict[str, Any], config: Dict[s
                     announce_url = tracker_config.get('announce_url', announce_url)
                     source = tracker_config.get('source_name')
             
+            # Generate standardized release name
+            release_name = generate_release_name(album_metadata, config, options)
+            
             # Create torrent
             torrent_path = torrent_creator.create_torrent(
                 album_path,
@@ -532,10 +544,12 @@ async def process_album(album_path: str, options: Dict[str, Any], config: Dict[s
                 source=source,
                 comment=f"{album_metadata.get('album', 'Unknown')} - "
                        f"{album_metadata.get('album_artists', ['Unknown'])[0]}",
-                piece_size=options.get('piece_size', 'auto')
+                piece_size=options.get('piece_size', 'auto'),
+                custom_name=release_name
             )
             
             album_metadata['torrent_path'] = torrent_path
+            album_metadata['release_name'] = release_name
             logger.info(f"Created album torrent: {torrent_path}")
             
             # Add to qBittorrent if enabled
@@ -549,9 +563,12 @@ async def process_album(album_path: str, options: Dict[str, Any], config: Dict[s
                     if qbt_config.get('use_original_path', True):
                         # Use the directory containing the album
                         save_path = os.path.abspath(album_path)
-                        
+                    
+                    # Get cover art path if available
+                    cover_path = album_metadata.get('cover_art_path')
+                    
                     # Add to qBittorrent
-                    success, message = qbt_client.add_torrent(torrent_path, save_path)
+                    success, message = qbt_client.add_torrent(torrent_path, save_path, cover_path)
                     if success:
                         logger.info(f"Added album torrent to qBittorrent: {message}")
                         album_metadata['added_to_client'] = True
@@ -678,6 +695,14 @@ def parse_args():
     parser.add_argument('--single', '-s', action='store_true', 
                       help='Force processing as single tracks even for directories')
     
+    # Media type and format options
+    parser.add_argument('--format', choices=['FLAC', 'MP3', 'AAC', 'WAV', 'ALAC'],
+                      help='Override audio format for release naming')
+    parser.add_argument('--media', choices=['CD', 'WEB', 'Vinyl', 'DVD', 'SACD', 'DAT', 'Cassette', 'Blu-Ray'],
+                      help='Specify media source for release naming')
+    parser.add_argument('--bitdepth', choices=['16', '24', '32'],
+                      help='Specify bit depth for release naming')
+    
     # Metadata sources
     parser.add_argument('--musicbrainz', action='store_true', 
                       help='Use MusicBrainz for metadata lookup')
@@ -745,6 +770,16 @@ async def main():
         'generate_description': True
     }
     
+    # Handle format override options
+    if args.format:
+        options['format_override'] = args.format
+    
+    if args.media:
+        options['media_override'] = args.media
+        
+    if args.bitdepth:
+        options['bitdepth_override'] = args.bitdepth
+    
     # Handle qBittorrent options
     qbt_config = config.get('qbittorrent', {})
     if args.add_to_client:
@@ -806,14 +841,22 @@ async def main():
                 if 'description_path' in result['metadata']:
                     print(f"Description: {result['metadata']['description_path']}")
                 
+                if 'release_name' in result['metadata']:
+                    print(f"\nRelease Name: {result['metadata']['release_name']}")
+                
                 if 'torrent_path' in result['metadata']:
                     print(f"Torrent: {result['metadata']['torrent_path']}")
                 
                 if result['metadata'].get('uploaded', False):
                     print(f"Uploaded to: {options['tracker']}")
+                    # Check if we have cover art paths
+                    if result['metadata'].get('cover_art_path') or result['metadata'].get('artwork_path'):
+                        print("Cover art included in tracker upload")
                     
                 if result['metadata'].get('added_to_client', False):
                     print("Added to qBittorrent for seeding")
+                    if result['metadata'].get('cover_art_path') or result['metadata'].get('artwork_path'):
+                        print("Cover art added to torrent")
                 
                 print("\nProcessed Tracks:")
                 for i, track in enumerate(result['track_results']):
@@ -831,14 +874,22 @@ async def main():
                 if 'description_path' in metadata:
                     print(f"Description: {metadata['description_path']}")
                 
+                if 'release_name' in metadata:
+                    print(f"\nRelease Name: {metadata['release_name']}")
+                
                 if 'torrent_path' in metadata:
                     print(f"Torrent: {metadata['torrent_path']}")
                 
                 if metadata.get('uploaded', False):
                     print(f"Uploaded to: {options['tracker']}")
+                    # Check if we have cover art paths
+                    if metadata.get('cover_art_path') or metadata.get('artwork_path'):
+                        print("Cover art included in tracker upload")
                     
                 if metadata.get('added_to_client', False):
                     print("Added to qBittorrent for seeding")
+                    if metadata.get('artwork_path'):
+                        print("Cover art added to torrent")
         
         # Copy description to output file if requested
         if args.output:

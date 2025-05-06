@@ -33,7 +33,8 @@ class TorrentCreator:
                        comment: str    = None,
                        private: bool   = None,
                        created_by: str = None,
-                       piece_size: Union[int, str] = None
+                       piece_size: Union[int, str] = None,
+                       custom_name: str = None
     ) -> str:
         if not bencodepy:
             raise ImportError("bencodepy module is required for torrent creation")
@@ -79,10 +80,13 @@ class TorrentCreator:
             metainfo['info']['private'] = 1
 
         # Determine output filename
-        if os.path.isdir(path):
+        if custom_name:
+            base = custom_name
+        elif os.path.isdir(path):
             base = os.path.basename(path) or os.path.basename(os.path.dirname(path))
         else:
             base = os.path.splitext(os.path.basename(path))[0]
+        
         if not base or base == '.':
             base = f"album_{int(time.time())}"
         base = self._sanitize_filename(base)
