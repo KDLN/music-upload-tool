@@ -665,6 +665,7 @@ async def main():
     # Set up logging
     if args.verbose:
         config['logging']['level'] = 'DEBUG'
+        config['debug'] = True
     setup_logging(config)
     
     # Create necessary directories
