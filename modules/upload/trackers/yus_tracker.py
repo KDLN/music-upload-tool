@@ -7,23 +7,35 @@ logger = logging.getLogger(__name__)
 
 class YUSTracker:
     def __init__(self, config: Dict[str, Any]):
-        self.config     = config
-        tr_cfg          = config.get('trackers', {}).get('YUS', {})
+        """
+        Initialize the Yu‑Scene tracker client.
+        """
+        self.config      = config
+        tr_cfg           = config.get('trackers', {}).get('YUS', {})
 
-        # Your API key for auth
-        self.api_key    = tr_cfg.get('api_key', '').strip()
+        # Your API key for the JSON API
+        self.api_key     = tr_cfg.get('api_key', '').strip()
 
-        # Must define upload_url here so is_configured() passes
-        self.upload_url = tr_cfg.get(
+        # The endpoint to POST the torrent file
+        # Must match Audionut's working script
+        self.upload_url  = tr_cfg.get(
             'upload_url',
             'https://yu-scene.net/api/torrents/upload'
         ).rstrip('/')
 
-        # Session & debug flag
-        self.session    = requests.Session()
-        self.debug_mode = config.get('debug', False)
+        # For debug simulation
+        self.debug_mode  = config.get('debug', False)
+
+        # Create a session for connection reuse
+        self.session     = requests.Session()
+        self.session.headers.update({
+            'User-Agent': f"Music-Upload-Assistant/{config.get('app_version','0.1.0')}"
+        })
 
     def is_configured(self) -> bool:
+        """
+        Returns True if api_key and upload_url are present.
+        """
         return bool(self.api_key and self.upload_url)
 
     def upload(self,
@@ -35,32 +47,41 @@ class YUSTracker:
                media: str = None
     ) -> Tuple[bool, str]:
         """
-        Synchronous upload() matching the call from music_upload_assistant.
-        Uses api_token in params, form-data for fields, and files for the .torrent.
+        Upload a torrent file + metadata to Yu‑Scene via their JSON API.
         """
-        # 1) Preconditions
+        # Preconditions
         if not self.is_configured():
             return False, "Tracker not configured"
         if not os.path.exists(torrent_path):
             return False, f"Torrent file not found: {torrent_path}"
 
-        # 2) Core form fields
-        tracker_cfg = self.config['trackers']['YUS']
+        # Build form‐data fields
+        tr_cfg    = self.config['trackers']['YUS']
+        cat_ids   = tr_cfg.get('category_ids', {})
+        type_ids  = tr_cfg.get('type_ids', {})
+        res_ids   = tr_cfg.get('resolution_ids', {})
+
         data = {
-            'name':         metadata.get('album', 'Unknown Album'),
-            'description':  description,
-            'category_id':  category or tracker_cfg.get('category_ids', {}).get(
-                                metadata.get('release_type','ALBUM').upper(), '7'),
-            'type_id':      format_id or tracker_cfg.get('format_ids', {}).get(
-                                metadata.get('format','').upper(), '0'),
-            'resolution_id': media or tracker_cfg.get('resolution_ids', {}).get(
-                                metadata.get('resolution','1080p'), '2'),
-            'anonymous':     int(metadata.get('anonymous', False)),
+            'name':           metadata.get('album', 'Unknown Album'),
+            'description':    description,
+            'category_id':    category or cat_ids.get(
+                                  metadata.get('release_type','ALBUM').upper(),
+                                  cat_ids.get('ALBUM','7')
+                              ),
+            'type_id':        format_id or type_ids.get(
+                                  metadata.get('format','').upper(),
+                                  type_ids.get('FLAC','16')
+                              ),
+            'resolution_id':  media or res_ids.get(
+                                  metadata.get('resolution','1080p').upper(),
+                                  res_ids.get('1080P','3')
+                              ),
+            'anonymous':      int(metadata.get('anonymous', False)),
             'personal_release': int(metadata.get('personalrelease', False)),
-            # add any extra flags like free/doubleup/etc if you need them
+            # You can add more flags here if needed (e.g. free, doubleup, sticky)
         }
 
-        # 3) Files payload
+        # Prepare the file payload
         files = {
             'torrent': (
                 os.path.basename(torrent_path),
@@ -76,38 +97,40 @@ class YUSTracker:
                 'image/jpeg'
             )
 
-        # 4) Debug simulation
+        # Debug mode: just print what would happen
         if self.debug_mode:
             logger.info("=== DEBUG MODE ===")
             logger.info("POST URL: %s", self.upload_url)
             logger.info("PARAMS: %s", {'api_token': self.api_key})
-            logger.info("DATA keys: %s", list(data.keys()))
-            logger.info("FILES keys: %s", list(files.keys()))
+            logger.info("DATA: %s", data)
+            logger.info("FILES: %s", list(files.keys()))
+            # Close file handles
             for _, f in files.items():
                 f[1].close()
             return True, "Debug mode: upload simulation successful"
 
-        # 5) Real upload
+        # Perform the real upload
         try:
-            resp = requests.post(
-                url    = self.upload_url,
-                params = {'api_token': self.api_key},
-                data   = data,
-                files  = files,
-                headers= {'User-Agent': 'Music-Upload-Assistant/1.0'}
+            response = self.session.post(
+                url     = self.upload_url,
+                params  = {'api_token': self.api_key},
+                data    = data,
+                files   = files
             )
-            # close file handles
+            # Close file handles
             for _, f in files.items():
                 f[1].close()
 
-            if not resp.ok:
-                return False, f"{resp.status_code} - {resp.text[:200]}"
+            if not response.ok:
+                return False, f"{response.status_code} - {response.text[:200]}"
             return True, "Upload successful"
 
         except Exception as e:
-            # ensure files get closed on exception
+            # Ensure files are closed on exception
             for _, f in files.items():
-                try: f[1].close()
-                except: pass
+                try:
+                    f[1].close()
+                except:
+                    pass
             logger.error("Exception during upload: %s", e)
             return False, f"Exception during upload: {e}"
