@@ -63,10 +63,14 @@ class TorrentCreator:
             raise FileNotFoundError(f"Path not found: {path}")
         
         # Use defaults if not specified
-        announce_url = announce_url or self.config.get('announce_url')
+        announce_url = (
+        announce_url
+        or self.config.get('torrent', {}).get('announce_url')
+        or self.config.get('announce_url')
+        )
         if not announce_url:
             raise ValueError("Announce URL not specified")
-        
+            
         source = source or self.default_source
         comment = comment or self.default_comment
         private = private if private is not None else self.default_private
