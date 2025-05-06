@@ -1,46 +1,53 @@
 """
-AcoustID client module for Music-Upload-Assistant.
-Handles audio fingerprinting and lookup through the AcoustID service.
+MusicBrainz client module for Music-Upload-Assistant.
+Handles metadata lookup and enrichment using the MusicBrainz database.
 """
 
 import os
 import time
 import logging
-import requests
 from typing import Dict, List, Optional, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
 try:
-    import acoustid
-    ACOUSTID_AVAILABLE = True
+    import musicbrainzngs
+    MUSICBRAINZ_AVAILABLE = True
 except ImportError:
-    logger.warning("pyacoustid not installed. Audio fingerprinting will not be available.")
-    ACOUSTID_AVAILABLE = False
+    logger.warning("musicbrainzngs not installed. MusicBrainz lookups will not be available.")
+    MUSICBRAINZ_AVAILABLE = False
 
-class AcoustIDClient:
+class MusicBrainzClient:
     """
-    Client for the AcoustID audio fingerprinting service.
+    Client for the MusicBrainz database.
     """
     
     def __init__(self, config: Dict[str, Any]):
         """
-        Initialize the AcoustID client.
+        Initialize the MusicBrainz client.
         
         Args:
             config: Configuration dictionary
         """
         self.config = config
-        self.api_key = config.get('acoustid_api_key')
         
-        if not self.api_key:
-            logger.warning("AcoustID API key not set in config. Audio fingerprinting will not be available.")
+        if not MUSICBRAINZ_AVAILABLE:
+            logger.warning("MusicBrainz client not available. Please install musicbrainzngs.")
+            return
         
-        self.delay = 1.0  # Rate limit: 1 request per second
+        # Set up MusicBrainz client
+        app_id = config.get('musicbrainz_app_id', 'MusicUploadAssistant/0.1.0')
+        contact = config.get('musicbrainz_contact', '')
+        
+        # Set user agent
+        musicbrainzngs.set_useragent(app_id, '0.1.0', contact=contact)
+        
+        # Set rate limiting
+        self.delay = 1.0  # MusicBrainz rate limit: 1 request per second
         self.last_request_time = 0
     
     def _rate_limit(self):
-        """Enforce AcoustID rate limiting."""
+        """Enforce MusicBrainz rate limiting."""
         current_time = time.time()
         time_since_last = current_time - self.last_request_time
         
@@ -51,337 +58,234 @@ class AcoustIDClient:
         
         self.last_request_time = time.time()
     
-    def fingerprint_file(self, file_path: str) -> Optional[Tuple[float, str]]:
+    def search_release(self, query: str) -> List[Dict[str, Any]]:
         """
-        Generate an AcoustID fingerprint for an audio file.
+        Search for releases matching the query.
         
         Args:
-            file_path: Path to the audio file
+            query: Search query
             
         Returns:
-            tuple: (duration, fingerprint) or None if failed
+            list: List of matching releases
         """
-        if not ACOUSTID_AVAILABLE:
-            logger.error("pyacoustid is required for fingerprinting")
-            return None
+        if not MUSICBRAINZ_AVAILABLE:
+            logger.error("musicbrainzngs is required for MusicBrainz search")
+            return []
         
-        if not self.api_key:
-            logger.error("AcoustID API key not set")
-            return None
+        self._rate_limit()
         
         try:
-            # Generate fingerprint
-            duration, fingerprint = acoustid.fingerprint_file(file_path)
-            logger.info(f"Generated fingerprint for {file_path}: {fingerprint[:20]}...")
-            return duration, fingerprint
-        except acoustid.FingerprintGenerationError as e:
-            logger.error(f"Error generating fingerprint for {file_path}: {e}")
-            return None
+            result = musicbrainzngs.search_releases(query=query, limit=5)
+            releases = result.get('release-list', [])
+            
+            logger.info(f"Found {len(releases)} releases matching '{query}'")
+            return releases
         except Exception as e:
-            logger.error(f"Unexpected error fingerprinting file {file_path}: {e}")
-            return None
+            logger.error(f"Error searching MusicBrainz: {e}")
+            return []
     
-    def lookup_fingerprint(self, fingerprint: str, duration: float) -> Optional[List[Dict[str, Any]]]:
+    def get_release_by_id(self, mbid: str) -> Optional[Dict[str, Any]]:
         """
-        Look up a fingerprint in the AcoustID database.
+        Get a release by its MusicBrainz ID.
         
         Args:
-            fingerprint: Audio fingerprint
-            duration: Audio duration in seconds
+            mbid: MusicBrainz release ID
             
         Returns:
-            list: List of matches or None if failed
+            dict: Release information or None if not found
         """
-        if not ACOUSTID_AVAILABLE:
-            logger.error("pyacoustid is required for fingerprint lookup")
-            return None
-        
-        if not self.api_key:
-            logger.error("AcoustID API key not set")
+        if not MUSICBRAINZ_AVAILABLE:
+            logger.error("musicbrainzngs is required for MusicBrainz lookup")
             return None
         
         self._rate_limit()
         
         try:
-            # Look up fingerprint
-            results = acoustid.lookup(self.api_key, fingerprint, duration, meta='recordings releases')
-            logger.info(f"Found {len(results)} matches for fingerprint")
-            return results
-        except acoustid.WebServiceError as e:
-            logger.error(f"AcoustID web service error: {e}")
+            includes = ['recordings', 'artists', 'release-groups', 'labels']
+            result = musicbrainzngs.get_release_by_id(mbid, includes=includes)
+            
+            release = result.get('release')
+            if release:
+                logger.info(f"Found release: {release.get('title')}")
+                return release
+            
             return None
         except Exception as e:
-            logger.error(f"Unexpected error looking up fingerprint: {e}")
+            logger.error(f"Error retrieving release from MusicBrainz: {e}")
             return None
     
-    def identify_file(self, file_path: str) -> Optional[List[Dict[str, Any]]]:
+    def enrich_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Identify an audio file using AcoustID.
+        Enrich existing metadata with MusicBrainz data.
         
         Args:
-            file_path: Path to the audio file
+            metadata: Existing metadata
             
         Returns:
-            list: List of matches or None if failed
+            dict: Enriched metadata
         """
-        if not ACOUSTID_AVAILABLE:
-            logger.error("pyacoustid is required for file identification")
-            return None
+        if not MUSICBRAINZ_AVAILABLE:
+            logger.error("musicbrainzngs is required for MusicBrainz enrichment")
+            return {}
         
-        if not self.api_key:
-            logger.error("AcoustID API key not set")
-            return None
+        enriched = {}
         
-        self._rate_limit()
+        # Check if we already have a MusicBrainz ID
+        mbid = metadata.get('musicbrainz_release_id')
         
-        try:
-            # Identify file directly
-            results = acoustid.match(self.api_key, file_path, meta='recordings releases')
-            logger.info(f"Found {len(results)} matches for {file_path}")
-            return results
-        except acoustid.FingerprintGenerationError as e:
-            logger.error(f"Error generating fingerprint for {file_path}: {e}")
-            return None
-        except acoustid.WebServiceError as e:
-            logger.error(f"AcoustID web service error: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error identifying file {file_path}: {e}")
-            return None
-    
-    def get_best_match(self, matches: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """
-        Get the best match from a list of AcoustID matches.
-        
-        Args:
-            matches: List of matches from AcoustID
+        if mbid:
+            # Get release by ID
+            release = self.get_release_by_id(mbid)
+            if release:
+                enriched = self._extract_release_metadata(release)
+        else:
+            # Try to search for the release
+            query_parts = []
             
-        Returns:
-            dict: Best match or None if no good match
-        """
-        if not matches:
-            return None
+            if 'album' in metadata and metadata['album']:
+                query_parts.append(metadata['album'])
+            
+            album_artists = metadata.get('album_artists') or metadata.get('artists', [])
+            if album_artists:
+                query_parts.append(album_artists[0])
+            
+            query = " ".join(query_parts)
+            
+            if query.strip():
+                releases = self.search_release(query)
+                if releases:
+                    release = releases[0]  # Use the first match
+                    enriched = self._extract_release_metadata(release)
+                    
+                    # Store the MusicBrainz ID
+                    if 'id' in release:
+                        enriched['musicbrainz_release_id'] = release['id']
         
-        # Sort by score (higher is better)
-        sorted_matches = sorted(matches, key=lambda m: m.get('score', 0), reverse=True)
-        
-        # Get the best match
-        best_match = sorted_matches[0]
-        
-        # Only return if score is good enough
-        if best_match.get('score', 0) < 0.5:
-            logger.warning(f"Best match score {best_match.get('score', 0)} is too low")
-            return None
-        
-        return best_match
+        return enriched
     
-    def extract_metadata(self, match: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_release_metadata(self, release: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Extract metadata from an AcoustID match.
+        Extract metadata from a MusicBrainz release.
         
         Args:
-            match: AcoustID match
+            release: MusicBrainz release
             
         Returns:
             dict: Extracted metadata
         """
         metadata = {}
         
-        # Get the recording info
-        if 'recordings' in match:
-            recording = match['recordings'][0]
+        # Basic release info
+        if 'title' in release:
+            metadata['album'] = release['title']
+        
+        if 'date' in release:
+            metadata['date'] = release['date']
+            # Try to extract year
+            try:
+                metadata['year'] = int(release['date'].split('-')[0])
+            except (ValueError, IndexError):
+                pass
+        
+        # Artists
+        if 'artist-credit' in release:
+            artists = []
+            for artist_credit in release['artist-credit']:
+                if isinstance(artist_credit, dict) and 'artist' in artist_credit:
+                    artists.append(artist_credit['artist']['name'])
             
-            # Basic metadata
-            metadata['title'] = recording.get('title')
+            if artists:
+                metadata['album_artists'] = artists
+        
+        # Label and catalog number
+        if 'label-info-list' in release:
+            for label_info in release['label-info-list']:
+                if 'label' in label_info:
+                    metadata['label'] = label_info['label']['name']
+                
+                if 'catalog-number' in label_info:
+                    metadata['catalog_number'] = label_info['catalog-number']
+                
+                break  # Use first label
+        
+        # Release country
+        if 'country' in release:
+            metadata['release_country'] = release['country']
+        
+        # Release type
+        if 'release-group' in release:
+            release_group = release['release-group']
+            if 'primary-type' in release_group:
+                metadata['release_type'] = release_group['primary-type']
+        
+        # Medium format
+        if 'medium-list' in release:
+            formats = set()
+            for medium in release['medium-list']:
+                if 'format' in medium:
+                    formats.add(medium['format'])
             
-            # Artists
-            if 'artists' in recording:
-                artists = [artist.get('name') for artist in recording['artists']]
-                metadata['artists'] = artists
-            
-            # MusicBrainz ID
-            metadata['musicbrainz_recording_id'] = recording.get('id')
-            
-            # Get the best release
-            if 'releases' in recording:
-                release = recording['releases'][0]
-                
-                # Release metadata
-                metadata['album'] = release.get('title')
-                
-                # Release MusicBrainz ID
-                metadata['musicbrainz_release_id'] = release.get('id')
-                
-                # Track number
-                if 'mediums' in release:
-                    for medium in release['mediums']:
-                        for track in medium.get('tracks', []):
-                            if track.get('id') == recording.get('id'):
-                                metadata['track_number'] = track.get('position')
-                                metadata['disc_number'] = medium.get('position')
-                                break
-                
-                # Date
-                if 'date' in release:
-                    metadata['date'] = release['date'].get('year')
-                
-                # Album artists
-                if 'artists' in release:
-                    album_artists = [artist.get('name') for artist in release['artists']]
-                    metadata['album_artists'] = album_artists
+            if formats:
+                metadata['media'] = '/'.join(formats)
         
         return metadata
-    
-    async def identify_and_enrich(self, file_path: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Identify a file and enrich its metadata.
-        
-        Args:
-            file_path: Path to the audio file
-            metadata: Existing metadata to enrich
-            
-        Returns:
-            dict: Enriched metadata
-        """
-        # Check if we already have good metadata
-        if self._has_sufficient_metadata(metadata):
-            logger.info(f"File {file_path} already has sufficient metadata")
-            return metadata
-        
-        # Identify the file
-        matches = self.identify_file(file_path)
-        if not matches:
-            logger.warning(f"No AcoustID matches found for {file_path}")
-            return metadata
-        
-        # Get the best match
-        best_match = self.get_best_match(matches)
-        if not best_match:
-            logger.warning(f"No good AcoustID match found for {file_path}")
-            return metadata
-        
-        # Extract metadata from the match
-        acoustid_metadata = self.extract_metadata(best_match)
-        
-        # Merge with existing metadata
-        enriched_metadata = self._merge_metadata(metadata, acoustid_metadata)
-        
-        logger.info(f"Enriched metadata for {file_path} using AcoustID")
-        return enriched_metadata
-    
-    def _has_sufficient_metadata(self, metadata: Dict[str, Any]) -> bool:
-        """
-        Check if metadata is sufficient.
-        
-        Args:
-            metadata: Metadata to check
-            
-        Returns:
-            bool: True if sufficient, False otherwise
-        """
-        # Check if we have the essential metadata
-        essential_fields = ['title', 'artists', 'album']
-        
-        return all(field in metadata and metadata[field] for field in essential_fields)
-    
-    def _merge_metadata(self, original: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Merge original metadata with new metadata, preferring original.
-        
-        Args:
-            original: Original metadata
-            new: New metadata
-            
-        Returns:
-            dict: Merged metadata
-        """
-        # Start with a copy of the original
-        merged = original.copy()
-        
-        # Add new fields that don't exist in the original
-        for key, value in new.items():
-            if key not in merged or not merged[key]:
-                merged[key] = value
-        
-        return merged
-    
-    def submit_fingerprint(self, file_path: str, musicbrainz_recording_id: str) -> bool:
-        """
-        Submit a fingerprint to the AcoustID database.
-        
-        Args:
-            file_path: Path to the audio file
-            musicbrainz_recording_id: MusicBrainz recording ID
-            
-        Returns:
-            bool: Success status
-        """
-        if not ACOUSTID_AVAILABLE:
-            logger.error("pyacoustid is required for fingerprint submission")
-            return False
-        
-        if not self.api_key:
-            logger.error("AcoustID API key not set")
-            return False
-        
-        try:
-            # Generate fingerprint
-            duration, fingerprint = acoustid.fingerprint_file(file_path)
-            
-            # Submit fingerprint
-            acoustid.submit(self.api_key, musicbrainz_recording_id, fingerprint, duration)
-            
-            logger.info(f"Submitted fingerprint for {file_path} to AcoustID")
-            return True
-        except Exception as e:
-            logger.error(f"Error submitting fingerprint: {e}")
-            return False
 
 
 if __name__ == "__main__":
     import sys
-    import json
     
     # Configure logging
     logging.basicConfig(level=logging.INFO)
     
-    if len(sys.argv) < 2:
-        print("Usage: python acoustid_client.py <audio_file>")
+    if not MUSICBRAINZ_AVAILABLE:
+        print("musicbrainzngs not installed. Please install it with 'pip install musicbrainzngs'")
         sys.exit(1)
     
-    file_path = sys.argv[1]
+    if len(sys.argv) < 2:
+        print("Usage: python musicbrainz.py <album> [artist]")
+        sys.exit(1)
     
-    # Create a sample config with a placeholder API key
-    # You need to replace this with your own API key
+    # Create a sample config
     config = {
-        'acoustid_api_key': 'YOUR_API_KEY'
+        'app_name': 'Music-Upload-Assistant',
+        'app_version': '0.1.0',
+        'musicbrainz_contact': 'your-email@example.com'
     }
     
-    # Create the client
-    client = AcoustIDClient(config)
+    client = MusicBrainzClient(config)
     
-    # Check if the client is available
-    if not ACOUSTID_AVAILABLE or not client.api_key:
-        print("AcoustID client not available. Please install pyacoustid and set an API key.")
+    album = sys.argv[1]
+    artist = sys.argv[2] if len(sys.argv) > 2 else ""
+    
+    query = f"{album} {artist}".strip()
+    
+    print(f"Searching for: {query}")
+    releases = client.search_release(query)
+    
+    if not releases:
+        print("No releases found.")
         sys.exit(1)
     
-    # Identify the file
-    print(f"Identifying {file_path}...")
-    matches = client.identify_file(file_path)
+    for i, release in enumerate(releases):
+        print(f"\n{i+1}. {release.get('title')} - {release.get('artist-credit-phrase', '')}")
+        print(f"   ID: {release.get('id')}")
+        print(f"   Date: {release.get('date', 'Unknown')}")
+        
+        if 'label-info-list' in release:
+            for label_info in release['label-info-list']:
+                if 'label' in label_info:
+                    print(f"   Label: {label_info['label']['name']}")
+                if 'catalog-number' in label_info:
+                    print(f"   Catalog: {label_info['catalog-number']}")
     
-    if not matches:
-        print("No matches found.")
-        sys.exit(1)
-    
-    # Get the best match
-    best_match = client.get_best_match(matches)
-    
-    if not best_match:
-        print("No good match found.")
-        sys.exit(1)
-    
-    # Extract and print metadata
-    metadata = client.extract_metadata(best_match)
-    print("\nExtracted metadata:")
-    for key, value in metadata.items():
-        print(f"{key}: {value}")
+    # Get more details for the first release
+    if releases:
+        print("\nGetting details for first release...")
+        mbid = releases[0]['id']
+        release = client.get_release_by_id(mbid)
+        
+        if release:
+            metadata = client._extract_release_metadata(release)
+            print("\nExtracted metadata:")
+            for key, value in metadata.items():
+                print(f"{key}: {value}")

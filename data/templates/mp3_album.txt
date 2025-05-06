@@ -1,0 +1,18 @@
+[b]${album}[/b] by [b]${album_artists}[/b]
+
+[if:year][b]Year:[/b] ${year}[endif]
+[if:label][b]Label:[/b] ${label}[endif]
+[if:catalog_number][b]Catalog Number:[/b] ${catalog_number}[endif]
+[b]Format:[/b] MP3 ${bitrate} kbps
+[b]Tracks:[/b] ${total_tracks}[if:total_discs] on ${total_discs} discs[endif]
+[if:total_size][b]Size:[/b] ${total_size}[endif]
+
+[b]Track List:[/b]
+${track_list}
+
+[b]Technical Info:[/b]
+Bitrate: ${bitrate} kbps
+Sample Rate: ${sample_rate}
+Encoder: [if:encoder]${encoder}[else]Unknown[endif]
+
+[b]Download:[/b] Uploaded with Music-Upload-Assistant

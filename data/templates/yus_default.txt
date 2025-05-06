@@ -1,0 +1,20 @@
+[size=5][b]${album}[/b][/size]
+
+[b]Artist:[/b] ${album_artists}
+[if:year][b]Year:[/b] ${year}[endif]
+[if:label][b]Label:[/b] ${label}[endif]
+[if:catalog_number][b]Catalog Number:[/b] ${catalog_number}[endif]
+[b]Format:[/b] ${format} ${sample_rate} ${bit_depth}
+[b]Tracks:[/b] ${total_tracks}
+
+[b]Tracklist:[/b]
+${track_list}
+
+[if:total_size][b]Total Size:[/b] ${total_size}[endif]
+
+[b]Technical Info:[/b]
+Format: ${format}
+Sample Rate: ${sample_rate}
+Bit Depth: ${bit_depth}
+
+[b]Download:[/b] Uploaded with Music-Upload-Assistant

@@ -1,0 +1,11 @@
+[b]${title}[/b] by [b]${artists}[/b]
+
+[b]Album:[/b] ${album}
+[if:year][b]Year:[/b] ${year}[endif]
+[b]Format:[/b] ${format} ${sample_rate} ${bit_depth}
+[b]Bitrate:[/b] ${bitrate}
+
+[if:warnings][b]Warnings:[/b]
+${warnings}[endif]
+
+[b]Download:[/b] Uploaded with Music-Upload-Assistant
