@@ -64,40 +64,43 @@ class YUSTracker:
         if not os.path.exists(torrent_path):
             return False, f"Torrent file not found: {torrent_path}"
 
-        # Prepare upload data (no API key here – it goes in the header)
+        # Prepare upload data (api_key moves into header)
         upload_data = {
             'title':       metadata.get('album', 'Unknown Album'),
             'description': description,
             'anonymous':   str(int(self.config.get('trackers', {}).get('YUS', {}).get('anon', False))),
         }
 
-        # Determine category
-        tracker_config = self.config.get('trackers', {}).get('YUS', {})
-        category_ids = tracker_config.get('category_ids', {})
+        # Build YU‑Scene’s cat ID
+        tracker_cfg = self.config.get('trackers', {}).get('YUS', {})
+        cat_ids     = tracker_cfg.get('category_ids', {})
+
         if category:
-            upload_data['category'] = category
+            cat_value = category
         elif metadata.get('release_type'):
             rt = metadata['release_type'].upper()
-            upload_data['category'] = category_ids.get(rt, category_ids.get('ALBUM', '7'))
+            cat_value = cat_ids.get(rt, cat_ids.get('ALBUM', '7'))
         else:
-            upload_data['category'] = category_ids.get('ALBUM', '7')
+            cat_value = cat_ids.get('ALBUM', '7')
 
-        # Determine format
-        format_ids = tracker_config.get('format_ids', {})
+        # *** HERE: use "cat" instead of "category" ***
+        upload_data['cat'] = cat_value
+
+        # Format & media (names usually match, but double‑check your site's form)
+        fmt_ids = tracker_cfg.get('format_ids', {})
         if format_id:
             upload_data['format'] = format_id
         elif metadata.get('format'):
-            fmt = metadata['format'].upper()
-            if fmt in format_ids:
-                upload_data['format'] = format_ids[fmt]
+            f = metadata['format'].upper()
+            if f in fmt_ids:
+                upload_data['format'] = fmt_ids[f]
 
-        # Determine media
         if media:
             upload_data['media'] = media
         elif metadata.get('media'):
             upload_data['media'] = metadata['media']
 
-        # Prepare files
+        # Files
         files = {
             'torrent': (
                 os.path.basename(torrent_path),
@@ -105,49 +108,46 @@ class YUSTracker:
                 'application/x-bittorrent'
             )
         }
-        # Add cover art if available
-        art_path = metadata.get('artwork_path')
-        if art_path and os.path.exists(art_path):
+        art = metadata.get('artwork_path')
+        if art and os.path.exists(art):
             files['cover'] = (
-                os.path.basename(art_path),
-                open(art_path, 'rb'),
+                os.path.basename(art),
+                open(art, 'rb'),
                 'image/jpeg'
             )
 
-        # Debug mode: simulate and exit
+        # Debug?
         if self.debug_mode:
-            logger.info(f"Debug mode: Would upload to {self.upload_url} with data: {upload_data}")
-            logger.info(f"Debug mode: Would include files: {list(files.keys())}")
-            return True, "Debug mode: Upload simulation successful"
+            logger.info(f"Debug: upload to {self.upload_url} with {upload_data}")
+            logger.info(f"Debug: files {list(files.keys())}")
+            return True, "Debug simulation"
 
-        # Real upload: send API key in Authorization header
+        # Real upload w/ header auth
         headers = {
             'User-Agent':    'Music-Upload-Assistant/0.1.0',
             'Authorization': f"Bearer {self.api_key}"
         }
 
         try:
-            response = requests.post(
-                self.upload_url,
-                data=upload_data,
-                files=files,
-                headers=headers
-            )
-            if not response.ok:
-                logger.error(f"Error uploading to {self.name}: {response.status_code} - {response.text}")
-                return False, f"Error: {response.status_code} - {response.text[:200]}"
-
-            logger.info(f"Successfully uploaded to {self.name}: {response.text[:200]}")
-            return True, f"Successfully uploaded to {self.name}"
+            resp = requests.post(self.upload_url,
+                                data=upload_data,
+                                files=files,
+                                headers=headers)
+            if not resp.ok:
+                msg = resp.text[:200]
+                logger.error(f"Upload error {resp.status_code}: {msg}")
+                return False, f"{resp.status_code} - {msg}"
+            logger.info(f"Uploaded: {resp.text[:200]}")
+            return True, "Upload successful"
 
         except Exception as e:
-            logger.error(f"Exception during upload to {self.name}: {e}")
-            return False, f"Exception during upload: {e}"
+            logger.error(f"Upload exception: {e}")
+            return False, f"Exception: {e}"
 
         finally:
-            # Close all file handles
-            for _, filetuple in files.items():
-                filetuple[1].close()
+            for _, ft in files.items():
+                ft[1].close()
+
 
     
     def check_duplicate(self, metadata: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
