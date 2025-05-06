@@ -6,22 +6,13 @@ from typing import Dict, Any, Tuple
 logger = logging.getLogger(__name__)
 
 class YUSTracker:
-    def __init__(self, config: Dict[str, Any]):
-        """
-        Initialize the Yu‑Scene tracker client.
-        """
-        self.config      = config
-        tr_cfg           = config.get('trackers', {}).get('YUS', {})
+    def __init__(self, config):
+        tr_cfg = config.get('trackers', {}).get('YUS', {})
+        self.api_key    = tr_cfg.get('api_key', '').strip()
+        self.upload_url = tr_cfg.get('upload_url','').strip()
 
-        # Your API key for the JSON API
-        self.api_key     = tr_cfg.get('api_key', '').strip()
-
-        # The endpoint to POST the torrent file
-        # Must match Audionut's working script
-        self.upload_url  = tr_cfg.get(
-            'upload_url',
-            'https://yu-scene.net/api/torrents/upload'
-        ).rstrip('/')
+        logger.info(f"[YUS CONFIG] api_key={'SET' if self.api_key else 'MISSING'}, "
+                    f"upload_url={self.upload_url or 'MISSING'}")
 
         # For debug simulation
         self.debug_mode  = config.get('debug', False)
