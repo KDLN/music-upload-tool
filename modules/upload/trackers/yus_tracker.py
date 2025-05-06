@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 class YUSTracker:
     def __init__(self, config):
+        self.config = config  # Store the entire config for later use
         tr_cfg = config.get('trackers', {}).get('YUS', {})
         self.api_key    = tr_cfg.get('api_key', '').strip()
         self.upload_url = tr_cfg.get('upload_url','').strip()
