@@ -7,17 +7,19 @@ logger = logging.getLogger(__name__)
 
 class YUSTracker:
     def __init__(self, config: Dict[str, Any]):
-        # Save full config
         self.config     = config
         tr_cfg          = config.get('trackers', {}).get('YUS', {})
 
-        # API key goes in URL params
+        # Your API key for auth
         self.api_key    = tr_cfg.get('api_key', '').strip()
 
-        # Endpoint that Audionut’s working script uses
-        self.upload_url = 'https://yu-scene.net/api/torrents/upload'
+        # Must define upload_url here so is_configured() passes
+        self.upload_url = tr_cfg.get(
+            'upload_url',
+            'https://yu-scene.net/api/torrents/upload'
+        ).rstrip('/')
 
-        # HTTP session + debug flag
+        # Session & debug flag
         self.session    = requests.Session()
         self.debug_mode = config.get('debug', False)
 
