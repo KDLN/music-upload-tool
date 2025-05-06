@@ -9,6 +9,7 @@ class YUSTracker:
     def __init__(self, config: Dict[str, Any]):
         # Pull YUS settings from your main config
         tr_cfg = config.get('trackers', {}).get('YUS', {})
+        self.config     = config
 
         # Your API key for header auth
         self.api_key = tr_cfg.get('api_key', '')
