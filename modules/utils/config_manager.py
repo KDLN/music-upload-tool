@@ -128,8 +128,13 @@ class ConfigManager:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config_content = f.read()
                 
+                # Fix common Python/JSON syntax differences in the file
+                # Convert Python booleans to json-compatible values for the exec environment
+                config_content = config_content.replace('True', 'True')
+                config_content = config_content.replace('False', 'False')
+                
                 # Extract the config dictionary using exec
-                config_dict = {}
+                config_dict = {'True': True, 'False': False}
                 exec(config_content, config_dict)
                 
                 if 'config' in config_dict:
@@ -249,8 +254,13 @@ class ConfigManager:
             
             # Save as JSON by default
             if save_path.endswith('.py'):
+                # Convert JSON booleans to Python booleans
+                python_config = json.dumps(self.config, indent=4)
+                python_config = python_config.replace(': true', ': True')
+                python_config = python_config.replace(': false', ': False')
+                
                 with open(save_path, 'w', encoding='utf-8') as f:
-                    f.write(f"# Configuration for Music-Upload-Assistant\n\nconfig = {json.dumps(self.config, indent=4)}\n")
+                    f.write(f"# Configuration for Music-Upload-Assistant\n\nconfig = {python_config}\n")
             else:
                 with open(save_path, 'w', encoding='utf-8') as f:
                     json.dump(self.config, f, indent=4)

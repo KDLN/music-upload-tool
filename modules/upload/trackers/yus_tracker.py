@@ -195,13 +195,28 @@ class YUSTracker:
 
         # Perform the real upload
         try:
+            # Determine if we're using the API or the web form
+            is_api = 'api' in self.upload_url.lower()
+            
             logger.info(f"Uploading torrent to {self.upload_url} with name: {upload_name}")
-            response = self.session.post(
-                url     = self.upload_url,
-                params  = {'api_token': self.api_key},
-                data    = data,
-                files   = files
-            )
+            
+            # If using API endpoint
+            if is_api:
+                response = self.session.post(
+                    url     = self.upload_url,
+                    params  = {'api_token': self.api_key},
+                    data    = data,
+                    files   = files
+                )
+            # If using web form endpoint
+            else:
+                # For web form, add token to the form data
+                data['_token'] = self.api_key
+                response = self.session.post(
+                    url     = self.upload_url,
+                    data    = data,
+                    files   = files
+                )
             # Close file handles
             for _, f in files.items():
                 f[1].close()

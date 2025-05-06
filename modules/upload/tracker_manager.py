@@ -34,7 +34,12 @@ class TrackerManager:
             
         for tracker_id, tracker_config in self.config.get('trackers', {}).items():
             # Skip trackers without required fields or if not enabled
-            if not tracker_config.get('enabled', True):
+            # Convert string 'True'/'False' to boolean if needed
+            enabled = tracker_config.get('enabled', True)
+            if isinstance(enabled, str):
+                enabled = enabled.lower() == 'true'
+                
+            if not enabled:
                 logger.debug(f"Tracker {tracker_id} is disabled")
                 continue
                 
