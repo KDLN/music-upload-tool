@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], options: Dict[str, Any] = None) -> str:
     """
     Generate a standardized release name based on metadata.
-    Follows format: Artist - Album (Year) [Format (options)]
+    Follows format seen on trackers:
+    "Artist - Album (Year) FLAC"
     
     Args:
         metadata: Track or album metadata
@@ -28,20 +29,20 @@ def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], opti
     # Get basic release info
     artist = ""
     if 'album_artists' in metadata and metadata['album_artists']:
-        artist = metadata['album_artists'][0] if isinstance(metadata['album_artists'], list) else metadata['album_artists']
+        if isinstance(metadata['album_artists'], list):
+            artist = metadata['album_artists'][0]
+        else:
+            artist = metadata['album_artists']
     elif 'artists' in metadata and metadata['artists']:
-        artist = metadata['artists'][0] if isinstance(metadata['artists'], list) else metadata['artists']
+        if isinstance(metadata['artists'], list):
+            artist = metadata['artists'][0]
+        else:
+            artist = metadata['artists']
     else:
         artist = "Unknown Artist"
     
     album = metadata.get('album', 'Unknown Album')
     year = metadata.get('year', '')
-    
-    # Apply media override if specified
-    if 'media_override' in options:
-        media = options['media_override']
-    else:
-        media = metadata.get('media', '')
     
     # Apply format override if specified
     if 'format_override' in options:
@@ -51,30 +52,22 @@ def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], opti
     else:
         format_type = 'FLAC' if metadata.get('compression') == 'Lossless' else 'MP3'
     
-    # Build format options string
-    format_options = []
+    # Apply media override if specified
+    if 'media_override' in options:
+        media = options['media_override']
+    else:
+        media = metadata.get('media', '')
     
     # Apply bit depth override if specified
     if 'bitdepth_override' in options:
-        if format_type in ['FLAC', 'ALAC', 'WAV']:
-            format_options.append(f"{options['bitdepth_override']}-bit")
-    # Otherwise use bit depth from metadata
-    elif format_type in ['FLAC', 'ALAC', 'WAV'] and 'bit_depth' in metadata and metadata['bit_depth']:
-        format_options.append(f"{metadata['bit_depth']}-bit")
+        bit_depth = options['bitdepth_override']
+    elif 'bit_depth' in metadata and metadata['bit_depth']:
+        bit_depth = str(metadata['bit_depth'])
+    else:
+        bit_depth = ''
     
-    # Add bitrate for lossy formats
-    if format_type in ['MP3', 'AAC', 'OGG'] and 'bitrate' in metadata and metadata['bitrate']:
-        format_options.append(f"{metadata['bitrate']} kbps")
-    
-    # Add media source if known
-    if media:
-        format_options.append(media)
-    
-    # Add resolution information if specified
-    if 'resolution' in metadata:
-        format_options.append(metadata['resolution'])
-    
-    # Build the final name
+    # Simple format - example: "Artist - Album (Year) FLAC"
+    # Based on your screenshot, this seems to be the preferred format
     parts = []
     
     # Artist - Album
@@ -84,13 +77,16 @@ def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], opti
     if year:
         parts.append(f"({year})")
     
-    # Add format and options
-    if format_options:
-        format_string = f"{format_type} ({' '.join(format_options)})"
-    else:
-        format_string = format_type
+    # Add format (FLAC, MP3, etc.)
+    parts.append(format_type)
     
-    parts.append(f"[{format_string}]")
+    # For FLAC formats, add bit depth if available
+    if format_type == 'FLAC' and bit_depth:
+        parts[-1] += f" {bit_depth}-bit"
+    
+    # Add media source if specified (e.g., WEB, CD)
+    if media:
+        parts.append(media)
     
     # Join everything
     release_name = " ".join(parts)
@@ -98,6 +94,7 @@ def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], opti
     # Sanitize for filesystem use
     release_name = sanitize_filename(release_name)
     
+    logger.info(f"Generated release name: {release_name}")
     return release_name
 
 def sanitize_filename(name: str) -> str:

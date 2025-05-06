@@ -277,9 +277,31 @@ async def process_file(file_path: str, options: Dict[str, Any], config: Dict[str
     # Extract artwork to file if needed
     if 'artwork' in metadata and metadata['artwork']:
         artwork_path = os.path.join(temp_dir, "cover.jpg")
-        with open(artwork_path, 'wb') as f:
-            f.write(metadata['artwork'])
-        metadata['artwork_path'] = artwork_path
+        try:
+            with open(artwork_path, 'wb') as f:
+                f.write(metadata['artwork'])
+            metadata['artwork_path'] = artwork_path
+            logger.info(f"Saved artwork to {artwork_path}")
+        except Exception as e:
+            logger.error(f"Error saving artwork: {e}")
+    
+    # Try to find a cover image if we don't have embedded artwork
+    if 'artwork_path' not in metadata:
+        try:
+            # Check if there's a cover image in the same directory
+            dir_path = os.path.dirname(file_path)
+            cover_path = find_cover_art(dir_path)
+            if cover_path:
+                metadata['cover_art_path'] = cover_path
+                logger.info(f"Found external cover art: {cover_path}")
+                
+                # Copy to temp_dir to ensure it's available
+                temp_cover = os.path.join(temp_dir, "cover.jpg")
+                shutil.copy2(cover_path, temp_cover)
+                metadata['artwork_path'] = temp_cover
+                logger.info(f"Copied cover art to {temp_cover}")
+        except Exception as e:
+            logger.error(f"Error finding/copying cover art: {e}")
     
     # Extract technical info
     try:
