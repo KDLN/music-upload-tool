@@ -661,11 +661,11 @@ async def main():
     
     # Load configuration
     config = load_config(args.config)
+    config['debug'] = args.debug
     
     # Set up logging
     if args.verbose:
         config['logging']['level'] = 'DEBUG'
-        config['debug'] = True
     setup_logging(config)
     
     # Create necessary directories
