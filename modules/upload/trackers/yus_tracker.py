@@ -51,109 +51,104 @@ class YUSTracker:
         """
         return bool(self.api_key and self.upload_url)
     
-    def upload(self, torrent_path: str, description: str, metadata: Dict[str, Any],
-          category: str = None, format_id: str = None, media: str = None) -> Tuple[bool, str]:
+    def upload(self,
+           torrent_path: str,
+           description: str,
+           metadata: Dict[str, Any],
+           category: str = None,
+           format_id: str = None,
+           media: str = None
+) -> Tuple[bool, str]:
         if not self.is_configured():
             return False, "Tracker not properly configured"
-        
         if not os.path.exists(torrent_path):
             return False, f"Torrent file not found: {torrent_path}"
-        
-        # Prepare upload data
+
+        # Prepare upload data (no API key here – it goes in the header)
         upload_data = {
-            'api_key': self.api_key,
-            'title': metadata.get('album', 'Unknown Album'),
+            'title':       metadata.get('album', 'Unknown Album'),
             'description': description,
-            'anonymous': str(int(self.config.get('trackers', {}).get('YUS', {}).get('anon', False))),
+            'anonymous':   str(int(self.config.get('trackers', {}).get('YUS', {}).get('anon', False))),
         }
-        
-        # Set category
+
+        # Determine category
         tracker_config = self.config.get('trackers', {}).get('YUS', {})
         category_ids = tracker_config.get('category_ids', {})
-        
         if category:
             upload_data['category'] = category
         elif metadata.get('release_type'):
-            release_type = metadata['release_type'].upper()
-            if release_type in category_ids:
-                upload_data['category'] = category_ids[release_type]
-            else:
-                # Default to ALBUM
-                upload_data['category'] = category_ids.get('ALBUM', '7')
+            rt = metadata['release_type'].upper()
+            upload_data['category'] = category_ids.get(rt, category_ids.get('ALBUM', '7'))
         else:
-            # Default to ALBUM
             upload_data['category'] = category_ids.get('ALBUM', '7')
-        
-        # Set format
+
+        # Determine format
         format_ids = tracker_config.get('format_ids', {})
-        
         if format_id:
             upload_data['format'] = format_id
         elif metadata.get('format'):
-            format_type = metadata['format'].upper()
-            if format_type in format_ids:
-                upload_data['format'] = format_ids[format_type]
-        
-        # Set media type
+            fmt = metadata['format'].upper()
+            if fmt in format_ids:
+                upload_data['format'] = format_ids[fmt]
+
+        # Determine media
         if media:
             upload_data['media'] = media
         elif metadata.get('media'):
             upload_data['media'] = metadata['media']
-        
+
         # Prepare files
         files = {
-            'torrent': (os.path.basename(torrent_path), open(torrent_path, 'rb'), 'application/x-bittorrent')
+            'torrent': (
+                os.path.basename(torrent_path),
+                open(torrent_path, 'rb'),
+                'application/x-bittorrent'
+            )
         }
-        
         # Add cover art if available
-        if 'artwork_path' in metadata and os.path.exists(metadata['artwork_path']):
-            files['cover'] = (os.path.basename(metadata['artwork_path']), 
-                            open(metadata['artwork_path'], 'rb'), 'image/jpeg')
-        
-        # Check if debug mode is enabled
+        art_path = metadata.get('artwork_path')
+        if art_path and os.path.exists(art_path):
+            files['cover'] = (
+                os.path.basename(art_path),
+                open(art_path, 'rb'),
+                'image/jpeg'
+            )
+
+        # Debug mode: simulate and exit
         if self.debug_mode:
             logger.info(f"Debug mode: Would upload to {self.upload_url} with data: {upload_data}")
             logger.info(f"Debug mode: Would include files: {list(files.keys())}")
             return True, "Debug mode: Upload simulation successful"
-        
-        # Try different authentication methods
+
+        # Real upload: send API key in Authorization header
+        headers = {
+            'User-Agent':    'Music-Upload-Assistant/0.1.0',
+            'Authorization': f"Bearer {self.api_key}"
+        }
+
         try:
-            # Method 1: API key in form data (current method)
-            headers = {
-                'User-Agent': 'Music-Upload-Assistant/0.1.0'
-            }
-            
-            response = requests.post(self.upload_url, data=upload_data, files=files, headers=headers)
-            
-            # Check if we got a login page
-            if "login" in response.text.lower() or "<form" in response.text.lower():
-                logger.warning("Got login page with API key in form data, trying API key in header")
-                
-                # Method 2: API key in header
-                headers['Authorization'] = f"Bearer {self.api_key}"
-                upload_data_no_key = {k: v for k, v in upload_data.items() if k != 'api_key'}
-                
-                response = requests.post(self.upload_url, data=upload_data_no_key, files=files, headers=headers)
-                
-                # Still got a login page?
-                if "login" in response.text.lower() or "<form" in response.text.lower():
-                    logger.error(f"Authentication failed: Received login page instead of success message")
-                    return False, "Authentication failed: API key may be invalid or expired"
-            
-            # If we get here, the response seems valid
-            if response.ok:
-                logger.info(f"Successfully uploaded to {self.name}: {response.text[:200]}...")
-                return True, f"Successfully uploaded to {self.name}"
-            else:
+            response = requests.post(
+                self.upload_url,
+                data=upload_data,
+                files=files,
+                headers=headers
+            )
+            if not response.ok:
                 logger.error(f"Error uploading to {self.name}: {response.status_code} - {response.text}")
-                return False, f"Error: {response.status_code} - {response.text}"
+                return False, f"Error: {response.status_code} - {response.text[:200]}"
+
+            logger.info(f"Successfully uploaded to {self.name}: {response.text[:200]}")
+            return True, f"Successfully uploaded to {self.name}"
+
         except Exception as e:
-            logger.error(f"Exception during upload to {self.name}: {str(e)}")
-            return False, f"Exception during upload: {str(e)}"
+            logger.error(f"Exception during upload to {self.name}: {e}")
+            return False, f"Exception during upload: {e}"
+
         finally:
-            # Close file handles
-            for file in files.values():
-                file[1].close()
+            # Close all file handles
+            for _, filetuple in files.items():
+                filetuple[1].close()
+
     
     def check_duplicate(self, metadata: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """
