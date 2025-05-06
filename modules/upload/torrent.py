@@ -36,111 +36,89 @@ class TorrentCreator:
         self.default_source = self.torrent_config.get('source', 'MUA')
         self.default_private = self.torrent_config.get('private', True)
     
-    def create_torrent(self, path: str, announce_url: str = None, 
-                     source: str = None, comment: str = None, 
-                     private: bool = None, created_by: str = None,
-                     piece_size: Union[int, str] = None) -> str:
-        """
-        Create a .torrent file for a music file or directory.
-        
-        Args:
-            path: Path to the file or directory
-            announce_url: Tracker announce URL
-            source: Source tag
-            comment: Torrent comment
-            private: Whether the torrent is private
-            created_by: Creator name
-            piece_size: Piece size in KB or 'auto'
+        def create_torrent(self, path: str, announce_url: str = None, 
+                       source: str = None, comment: str = None, 
+                       private: bool = None, created_by: str = None,
+                       piece_size: Union[int, str] = None) -> str:
+            if not bencodepy:
+                raise ImportError("bencodepy module is required for torrent creation")
+                
+            # Check if path exists
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"Path not found: {path}")
             
-        Returns:
-            str: Path to the created .torrent file
-        """
-        if not bencodepy:
-            raise ImportError("bencodepy module is required for torrent creation")
-            
-        # Check if path exists
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Path not found: {path}")
-        
-        # Use defaults if not specified
-        announce_url = (
-        announce_url
-        or self.config.get('torrent', {}).get('announce_url')
-        or self.config.get('announce_url')
-        )
-        if not announce_url:
-            raise ValueError("Announce URL not specified")
+            # Determine announce URL, checking CLI first,
+            # then the torrent section of config, then top‑level announce_url
+            announce_url = (
+                announce_url
+                or self.torrent_config.get('announce_url')
+                or self.config.get('announce_url')
+            )
+            if not announce_url:
+                raise ValueError("Announce URL not specified")
 
-        
-        source = source or self.default_source
-        comment = comment or self.default_comment
-        private = private if private is not None else self.default_private
-        created_by = created_by or "Music-Upload-Assistant"
-        
-        # Calculate appropriate piece size
-        if piece_size == 'auto' or piece_size is None:
-            piece_size = self._calculate_piece_size(path)
-        else:
-            # Convert to bytes
-            piece_size = int(piece_size) * 1024
-        
-        logger.info(f"Creating torrent for {path} with piece size {piece_size / 1024}KB")
-        
-        # Build torrent metadata
-        info = self._build_info_dict(path, piece_size)
-        
-        # Create the metainfo dictionary
-        metainfo = {
-            'announce': announce_url,
-            'info': info,
-            'creation date': int(time.time()),
-            'created by': created_by,
-            'comment': comment
-        }
-        
-        # Add source if provided
-        if source:
-            metainfo['info']['source'] = source
-        
-        # Add private flag if requested
-        if private:
-            metainfo['info']['private'] = 1
-        
-        # Generate output filename
-        if os.path.isdir(path):
-            base_name = os.path.basename(path)
-            # If base_name is empty (trailing slash), use the parent directory name
-            if not base_name:
-                base_name = os.path.basename(os.path.dirname(path))
-        else:
-            base_name = os.path.splitext(os.path.basename(path))[0]
-        
-        # Make sure we have a valid filename
-        if not base_name or base_name == ".":
-            # Fallback to using a timestamp if we can't get a name
-            base_name = f"album_{int(time.time())}"
-        
-        # Clean up the filename - replace invalid characters
-        base_name = self._sanitize_filename(base_name)
-        
-        output_name = f"{base_name}.torrent"
-        output_dir = self.config.get('output_dir', os.path.dirname(path))
-        output_path = os.path.join(output_dir, output_name)
-        
-        # Ensure output directory exists
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Encode and write the torrent file
-        try:
-            encoded_data = bencodepy.encode(metainfo)
-            with open(output_path, 'wb') as f:
-                f.write(encoded_data)
+            source     = source or self.default_source
+            comment    = comment or self.default_comment
+            private    = private if private is not None else self.default_private
+            created_by = created_by or "Music-Upload-Assistant"
             
-            logger.info(f"Torrent file created: {output_path}")
-            return output_path
-        except Exception as e:
-            logger.error(f"Error creating torrent file: {e}")
-            raise
+            # Calculate appropriate piece size
+            if piece_size == 'auto' or piece_size is None:
+                piece_size = self._calculate_piece_size(path)
+            else:
+                # Convert to bytes
+                piece_size = int(piece_size) * 1024
+            
+            logger.info(f"Creating torrent for {path} with piece size {piece_size / 1024}KB")
+            
+            # Build torrent metadata
+            info = self._build_info_dict(path, piece_size)
+            
+            # Create the metainfo dictionary
+            metainfo = {
+                'announce':       announce_url,
+                'info':           info,
+                'creation date':  int(time.time()),
+                'created by':     created_by,
+                'comment':        comment
+            }
+            
+            # Add source if provided
+            if source:
+                metainfo['info']['source'] = source
+            
+            # Add private flag if requested
+            if private:
+                metainfo['info']['private'] = 1
+            
+            # Generate output filename
+            if os.path.isdir(path):
+                base_name = os.path.basename(path) or os.path.basename(os.path.dirname(path))
+            else:
+                base_name = os.path.splitext(os.path.basename(path))[0]
+            
+            if not base_name or base_name == ".":
+                base_name = f"album_{int(time.time())}"
+            
+            base_name   = self._sanitize_filename(base_name)
+            output_name = f"{base_name}.torrent"
+            output_dir  = self.config.get('output_dir', os.path.dirname(path))
+            output_path = os.path.join(output_dir, output_name)
+            
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Encode and write the torrent file
+            try:
+                encoded_data = bencodepy.encode(metainfo)
+                with open(output_path, 'wb') as f:
+                    f.write(encoded_data)
+                
+                logger.info(f"Torrent file created: {output_path}")
+                return output_path
+            except Exception as e:
+                logger.error(f"Error creating torrent file: {e}")
+                raise
+
     
     def _sanitize_filename(self, filename: str) -> str:
         """
