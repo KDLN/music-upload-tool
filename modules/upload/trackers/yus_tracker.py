@@ -125,10 +125,13 @@ class YUSTracker:
         # First try to get the format ID from the format_ids mapping
         type_id = format_id or format_ids.get(format_type)
         
-        # If not found, use a hardcoded fallback based on common YU-Scene format IDs
-        if not type_id:
+        # For FLAC files, always use type_id 16 regardless of what's in config
+        if format_type == 'FLAC':
+            type_id = '16'
+            logger.info(f"Overriding format_ids - using hardcoded type_id: 16 for FLAC")
+        # For other formats, use the configured value or fallback
+        elif not type_id:
             format_fallbacks = {
-                'FLAC': '16',  # Updated to 16 for FLAC
                 'MP3': '2',
                 'AAC': '3',
                 'AC3': '4',
@@ -146,6 +149,11 @@ class YUSTracker:
         # Create proper name for upload
         if 'release_name' in metadata:
             upload_name = metadata['release_name']
+            
+            # Fix format mismatch if present (e.g., MP3 in name but FLAC in files)
+            if format_type == 'FLAC' and ' MP3' in upload_name:
+                upload_name = upload_name.replace(' MP3', ' FLAC')
+                logger.info(f"Fixed format mismatch in release name: {upload_name}")
         else:
             # Generate a standard name
             album = metadata.get('album', 'Unknown Album')
