@@ -1,5 +1,5 @@
 """
-Configuration manager module for Music-Upload-Assistant.
+Configuration manager module for Music-Upload-Tool.
 Handles loading, merging, and saving configuration.
 """
 
@@ -48,15 +48,15 @@ class ConfigManager:
             dict: Default configuration
         """
         return {
-            'app_name': 'Music-Upload-Assistant',
-            'app_version': '0.2.0',
+            'app_name': 'Music-Upload-Tool',
+            'app_version': '1.0.0',
             'templates_dir': os.path.join('data', 'templates'),
             'temp_dir': 'temp',
             'output_dir': 'output',
             'uploader_name': '',  # Default empty, to be set by user
             'logging': {
                 'level': 'INFO',
-                'file': 'music_upload_assistant.log'
+                'file': 'music_upload_tool.log'
             },
             'trackers': {
                 # YUS (Yu-Scene) tracker template
@@ -70,48 +70,29 @@ class ConfigManager:
                     'source_name': 'YuScene',
                     'anon': False,
                     'category_ids': {
-                        'ALBUM': '7',
-                        'SINGLE': '8', 
+                        'ALBUM': '8',
+                        'SINGLE': '9', 
                         'EP': '9',
-                        'COMPILATION': '10',
-                        'SOUNDTRACK': '11',
-                        'LIVE': '12',
-                        'REMIX': '13',
-                        'BOOTLEG': '14',
-                        'INTERVIEW': '15',
-                        'MIXTAPE': '16'
+                        'COMPILATION': '8',
+                        'SOUNDTRACK': '8',
+                        'LIVE': '8'
                     },
                     'format_ids': {
-                        'FLAC': '1',
+                        'FLAC': '16',
                         'MP3': '2',
                         'AAC': '3',
                         'AC3': '4',
                         'DTS': '5',
                         'OGG': '6',
                         'ALAC': '7',
-                        'DSD': '8',
-                        'WAV': '9',
-                        'MQA': '10'
-                    },
-                    'description_template': 'yus_default.txt'
+                        'WAV': '9'
+                    }
                 }
             },
             'torrent': {
                 'piece_size': 'auto',
                 'private': True,
-                'comment': 'Created with Music-Upload-Assistant'
-            },
-            'qbittorrent': {
-                'enabled': False,
-                'host': 'http://localhost:8080',
-                'username': '',
-                'password': '',
-                'auto_start': True,
-                'default_save_path': ''
-            },
-            'description': {
-                'template': 'default_album',
-                'include_cover_in_description': True
+                'comment': 'Created with Music-Upload-Tool'
             }
         }
     
@@ -260,7 +241,7 @@ class ConfigManager:
                 python_config = python_config.replace(': false', ': False')
                 
                 with open(save_path, 'w', encoding='utf-8') as f:
-                    f.write(f"# Configuration for Music-Upload-Assistant\n\nconfig = {python_config}\n")
+                    f.write(f"# Configuration for Music-Upload-Tool\n\nconfig = {python_config}\n")
             else:
                 with open(save_path, 'w', encoding='utf-8') as f:
                     json.dump(self.config, f, indent=4)

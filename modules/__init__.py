@@ -1,3 +1,3 @@
 """
-modules package for Music-Upload-Assistant.
+modules package for Music-Upload-Tool.
 """

@@ -1,0 +1,53 @@
+{
+    "app_name": "Music-Upload-Tool",
+    "app_version": "1.0.0",
+    "uploader_name": "YourName",
+    "templates_dir": "data/templates",
+    "temp_dir": "temp",
+    "output_dir": "output",
+    "description": {
+        "template": "default_album",
+        "include_cover_in_description": true
+    },
+    "trackers": {
+        "YUS": {
+            "enabled": false,
+            "name": "YU-Scene",
+            "url": "https://yu-scene.net",
+            "announce_url": "https://yu-scene.net/announce",
+            "api_key": "",
+            "upload_url": "https://yu-scene.net/api/torrents/upload",
+            "source_name": "YuScene",
+            "anon": false,
+            "category_ids": {
+                "ALBUM": "8",
+                "SINGLE": "9",
+                "EP": "9",
+                "COMPILATION": "8",
+                "SOUNDTRACK": "8",
+                "LIVE": "8"
+            },
+            "format_ids": {
+                "FLAC": "16",
+                "MP3": "2",
+                "AAC": "3",
+                "AC3": "4",
+                "DTS": "5",
+                "OGG": "6",
+                "ALAC": "7",
+                "WAV": "9"
+            }
+        }
+    },
+    "torrent": {
+        "piece_size": "auto",
+        "private": true,
+        "comment": "Created with Music-Upload-Tool"
+    },
+    "logging": {
+        "level": "INFO",
+        "file": "music_upload_tool.log",
+        "max_size": 5242880,
+        "backup_count": 3
+    }
+}
