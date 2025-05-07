@@ -111,9 +111,9 @@ class YUSTracker:
         cat_ids = tr_cfg.get('category_ids', {})
         format_ids = tr_cfg.get('format_ids', {})
         
-        # Determine category ID - default to ALBUM (7)
-        release_type = metadata.get('release_type', 'ALBUM').upper()
-        category_id = category or cat_ids.get(release_type, cat_ids.get('ALBUM', '7'))
+        # Determine category ID - hardcoded to 8 for Music
+        category_id = '8'  # Music category
+        logger.info(f"Using hardcoded category_id: {category_id} for music content")
         
         # Determine format ID - default to FLAC (1)
         format_type = metadata.get('format', 'FLAC').upper()
@@ -128,7 +128,7 @@ class YUSTracker:
         # If not found, use a hardcoded fallback based on common YU-Scene format IDs
         if not type_id:
             format_fallbacks = {
-                'FLAC': '1',
+                'FLAC': '16',  # Updated to 16 for FLAC
                 'MP3': '2',
                 'AAC': '3',
                 'AC3': '4',
@@ -139,7 +139,7 @@ class YUSTracker:
                 'WAV': '9',
                 'MQA': '10'
             }
-            type_id = format_fallbacks.get(format_type, '1')  # Default to FLAC (1) if not found
+            type_id = format_fallbacks.get(format_type, '16')  # Default to FLAC (16) if not found
             
         logger.info(f"Using type_id: {type_id} for format: {format_type}")
         
