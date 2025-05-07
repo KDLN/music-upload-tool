@@ -54,6 +54,16 @@ class TrackerManager:
                     else:
                         logger.warning(f"Tracker {tracker_id} is not properly configured")
                 
+                # SP tracker
+                elif tracker_id.upper() == 'SP':
+                    from modules.upload.trackers.sp_tracker import SPTracker
+                    tracker = SPTracker(self.config)
+                    if tracker.is_configured():
+                        self.trackers[tracker_id.upper()] = tracker
+                        logger.info(f"Loaded tracker: {tracker_id}")
+                    else:
+                        logger.warning(f"Tracker {tracker_id} is not properly configured")
+                
                 # Add more trackers here as they're implemented
                 # elif tracker_id.upper() == 'RED':
                 #     from modules.upload.trackers.red_tracker import REDTracker
