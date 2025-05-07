@@ -3,7 +3,6 @@
 Setup script to create the directory structure for Music-Upload-Assistant.
 Run this script to set up the initial directory structure and create empty files.
 """
-
 import os
 import shutil
 import sys
