@@ -53,13 +53,48 @@ Before a real upload, test in debug mode:
 python music_upload_assistant.py /path/to/album --tracker YOUR_TRACKER_ID --debug
 ```
 
-## Common Customizations
+## Troubleshooting Common Issues
 
-Most trackers will need to customize:
+### "Tracker is not properly configured"
 
-1. The category and format IDs in your configuration
-2. The form data structure in `_build_form_data`
-3. The authentication mechanism via `api_auth_type`
+If you see this error even after setting up the tracker:
+
+```
+Tracker SP is not properly configured
+```
+
+Check these common issues:
+
+1. **Missing API key**: Make sure you've set an API key when configuring the tracker.
+
+2. **API vs Form Authentication**: Some trackers use API keys even though they don't use a traditional API URL. 
+   - Try setting the `api_auth_type` to one of: `bearer`, `param`, or `token`
+   - For many trackers, the API key is sent as a form parameter
+
+3. **URLs**: Ensure both the site URL and upload URL are properly configured.
+
+4. **Custom is_configured**: Some trackers need a custom implementation. Edit the tracker module to override the `is_configured` method.
+
+### How to Fix Authentication Issues
+
+If a tracker uses an API key but doesn't have "api" in its URL (common for trackers like SP), you have two options:
+
+1. **Simple Fix**: Set the `use_api` flag manually in your config:
+   ```json
+   "SP": {
+      "enabled": true,
+      "use_api": true,
+      "api_key": "your_key",
+      ...
+   }
+   ```
+
+2. **Better Fix**: Customize your tracker module:
+   - Edit `modules/upload/trackers/your_tracker_tracker.py`
+   - Override the `is_configured` method to check only what's needed
+   - Update the upload method to include the API key appropriately
+
+Remember that each tracker has different requirements. Check the tracker's API documentation if available.
 
 ## Example: Common Tracker Setup
 

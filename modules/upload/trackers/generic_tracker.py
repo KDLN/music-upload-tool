@@ -73,12 +73,14 @@ class GenericTracker:
             bool: True if configured, False otherwise
         """
         # Basic validation - subclasses may override for specific requirements
-        if self.use_api and not self.api_key:
-            return False
         
-        if not self.use_api and not (self.username and self.password):
-            return False
+        # First check for API key - most trackers use this even for non-API endpoints
+        if not self.api_key:
+            # If no API key, check for username/password (for traditional form logins)
+            if not (self.username and self.password):
+                return False
         
+        # We need at least one URL to work with
         if not (self.upload_url or self.site_url):
             return False
         

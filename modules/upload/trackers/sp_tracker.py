@@ -40,6 +40,23 @@ class SPTracker(GenericTracker):
         # Log configuration
         logger.info(f"[SP CONFIG] Initialized with API auth type: {self.api_auth_type}")
     
+    def is_configured(self) -> bool:
+        """
+        Check if the SP tracker is properly configured.
+        
+        Returns:
+            bool: True if configured, False otherwise
+        """
+        # For SP tracker, we only need an API key and upload URL
+        if not self.api_key:
+            return False
+        
+        if not (self.upload_url or self.site_url):
+            return False
+            
+        # If we have an API key and a URL, we're good to go
+        return True
+    
     def _build_form_data(self, metadata: Dict[str, Any], description: str) -> Dict[str, Any]:
         """
         Build form data for SP tracker upload.
@@ -158,7 +175,8 @@ class SPTracker(GenericTracker):
         auth_params = {}
         auth_headers = {}
         
-        if self.use_api and self.api_key:
+        # For SP tracker, we always include the API key regardless of use_api flag
+        if self.api_key:
             # Choose authentication method based on config
             if self.api_auth_type == 'bearer':
                 # Use Bearer token in Authorization header
@@ -175,14 +193,12 @@ class SPTracker(GenericTracker):
                 data['api_token'] = self.api_key
                 logger.info("Using form token authentication")
             else:
-                # Fallback to Bearer token
-                auth_headers = {
-                    'Authorization': f"Bearer {self.api_key}"
-                }
-                logger.info("Using default Bearer token authentication")
+                # Add API key to form data by default for SP
+                data['api_token'] = self.api_key
+                logger.info("Adding API key to form data")
         else:
-            # For non-API uploads, might need to login first
-            logger.info("Using web form upload (non-API)")
+            # If no API key but we have username/password, might need to implement form login first
+            logger.info("No API key available - form login may be required")
         
         # Set content type based on API format
         if self.api_format == 'json':
