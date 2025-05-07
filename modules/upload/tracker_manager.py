@@ -44,53 +44,71 @@ class TrackerManager:
                 continue
                 
             try:
-                # Import the appropriate tracker class
-                if tracker_id.upper() == 'YUS':
-                    from modules.upload.trackers.yus_tracker import YUSTracker
-                    tracker = YUSTracker(self.config)
-                    if tracker.is_configured():
-                        self.trackers[tracker_id.upper()] = tracker
-                        logger.info(f"Loaded tracker: {tracker_id}")
-                    else:
-                        logger.warning(f"Tracker {tracker_id} is not properly configured")
+                # Normalize tracker ID
+                tracker_id = tracker_id.upper()
                 
-                # SP tracker
-                elif tracker_id.upper() == 'SP':
-                    from modules.upload.trackers.sp_tracker import SPTracker
-                    tracker = SPTracker(self.config)
-                    if tracker.is_configured():
-                        self.trackers[tracker_id.upper()] = tracker
-                        logger.info(f"Loaded tracker: {tracker_id}")
-                    else:
-                        logger.warning(f"Tracker {tracker_id} is not properly configured")
-                
-                # Add more trackers here as they're implemented
-                # elif tracker_id.upper() == 'RED':
-                #     from modules.upload.trackers.red_tracker import REDTracker
-                #     self.trackers[tracker_id.upper()] = REDTracker(self.config)
-                
-                else:
-                    # Try to dynamically load the tracker module
+                # Try to dynamically load the tracker module
+                try:
+                    # Build the expected module name
+                    module_name = f"modules.upload.trackers.{tracker_id.lower()}_tracker"
+                    
+                    # Try to import the module
                     try:
-                        module_name = f"modules.upload.trackers.{tracker_id.lower()}_tracker"
                         module = importlib.import_module(module_name)
+                        logger.debug(f"Successfully imported module: {module_name}")
+                    except ImportError as e:
+                        logger.warning(f"Could not import tracker module {module_name}: {e}")
+                        # Try to use GenericTracker as fallback
+                        from modules.upload.trackers.generic_tracker import GenericTracker
+                        logger.info(f"Using GenericTracker for {tracker_id}")
                         
-                        # Get the tracker class (assuming it's named [Name]Tracker)
-                        class_name = f"{tracker_id.capitalize()}Tracker"
-                        tracker_class = getattr(module, class_name)
+                        # Create a custom class on-the-fly
+                        class DynamicTracker(GenericTracker):
+                            def __init__(self, config):
+                                super().__init__(config, tracker_id)
                         
-                        # Create an instance
-                        tracker = tracker_class(self.config)
-                        if hasattr(tracker, 'is_configured') and tracker.is_configured():
-                            self.trackers[tracker_id.upper()] = tracker
-                            logger.info(f"Dynamically loaded tracker: {tracker_id}")
+                        # Add the tracker
+                        tracker = DynamicTracker(self.config)
+                        if tracker.is_configured():
+                            self.trackers[tracker_id] = tracker
+                            logger.info(f"Created dynamic tracker for: {tracker_id}")
                         else:
-                            logger.warning(f"Tracker {tracker_id} is not properly configured")
-                    except (ImportError, AttributeError) as e:
-                        logger.error(f"Failed to dynamically load tracker {tracker_id}: {e}")
+                            logger.warning(f"Dynamic tracker {tracker_id} is not properly configured")
+                        continue
+                    
+                    # Get the expected class name (YUSTracker, SPTracker, etc.)
+                    expected_class_name = f"{tracker_id.capitalize()}Tracker"
+                    
+                    # Try to get the class from the module
+                    if hasattr(module, expected_class_name):
+                        tracker_class = getattr(module, expected_class_name)
+                    else:
+                        # Look for any class that ends with "Tracker"
+                        tracker_class = None
+                        for attr_name in dir(module):
+                            if attr_name.endswith("Tracker") and attr_name != "GenericTracker":
+                                tracker_class = getattr(module, attr_name)
+                                logger.debug(f"Found tracker class: {attr_name}")
+                                break
+                        
+                        if not tracker_class:
+                            raise AttributeError(f"No tracker class found in module {module_name}")
+                    
+                    # Create an instance of the tracker class
+                    tracker = tracker_class(self.config)
+                    
+                    # Check if properly configured
+                    if hasattr(tracker, 'is_configured') and tracker.is_configured():
+                        self.trackers[tracker_id] = tracker
+                        logger.info(f"Loaded tracker: {tracker_id}")
+                    else:
+                        logger.warning(f"Tracker {tracker_id} is not properly configured")
+                        
+                except Exception as e:
+                    logger.error(f"Error loading tracker {tracker_id}: {e}")
             
             except Exception as e:
-                logger.error(f"Error loading tracker {tracker_id}: {e}")
+                logger.error(f"Unexpected error initializing tracker {tracker_id}: {e}")
     
     def get_tracker(self, tracker_id: str):
         """
