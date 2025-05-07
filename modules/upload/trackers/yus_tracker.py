@@ -228,7 +228,7 @@ class YUSTracker:
         # Debug all the API request details
         logger.info(f"API URL: {api_url}")
         logger.info(f"API Token: {self.api_key[:4]}****")
-        logger.info(f"Category ID: {category_id} for release type: {release_type}")
+        logger.info(f"Category ID: {category_id}")
         logger.info(f"Type ID: {type_id} for format: {format_type}")
         logger.info(f"Upload Name: {upload_name}")
         
