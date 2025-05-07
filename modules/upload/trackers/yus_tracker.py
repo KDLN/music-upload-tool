@@ -134,7 +134,7 @@ class YUSTracker:
                media: str = None
     ) -> Tuple[bool, str]:
         """
-        Upload a torrent file + metadata to Yu‑Scene via their API or web form.
+        Upload a torrent file + metadata to Yu‑Scene via their API.
         """
         # Preconditions
         if not self.is_configured():
@@ -180,6 +180,15 @@ class YUSTracker:
                 upload_name += f" ({year})"
             upload_name += f" {format_type}"
 
+        # Build common form data
+        data = {
+            'name': upload_name,
+            'description': description,
+            'category_id': category_id,
+            'type_id': type_id,
+            'anonymous': "1" if self.anon else "0"
+        }
+        
         # Prepare the file payload
         files = {
             'torrent': (
@@ -203,7 +212,7 @@ class YUSTracker:
                 elif cover_path.lower().endswith('.gif'):
                     mime_type = 'image/gif'
                     
-                files['image'] = (  # Most sites use 'image' as the field name
+                files['image'] = (  # Most API endpoints use 'image' as the field name
                     os.path.basename(cover_path),
                     cover_file_handle,
                     mime_type
@@ -213,21 +222,56 @@ class YUSTracker:
                 logger.error(f"Error adding cover to upload: {e}")
                 if cover_file_handle:
                     cover_file_handle.close()
-
-        # Build common form data
-        data = {
-            'name': upload_name,
-            'description': description,
-            'category_id': category_id,
-            'type_id': type_id,
-            'anonymous': "1" if self.anon else "0"
-        }
         
-        # Try different approaches based on the site's structure
-        if self.use_api:
-            return self._upload_api(torrent_path, data, files)
-        else:
-            return self._upload_web_form(torrent_path, data, files)
+        # Use API endpoint
+        api_url = self.upload_url
+        
+        # If the URL doesn't include 'api', automatically convert it to the API endpoint
+        if '/api/' not in api_url.lower():
+            # Construct proper API URL - usually /api/torrents/upload
+            api_url = urljoin(self.site_url, '/api/torrents/upload')
+            logger.info(f"Converting to API endpoint: {api_url}")
+        
+        # Debug mode: just print what would happen
+        if self.debug_mode:
+            logger.info("=== DEBUG MODE API UPLOAD ===")
+            logger.info("POST URL: %s", api_url)
+            logger.info("PARAMS: %s", {'api_token': self.api_key})
+            logger.info("DATA: %s", data)
+            logger.info("FILES: %s", list(files.keys()))
+            # Close file handles
+            for _, f in files.items():
+                f[1].close()
+            return True, "Debug mode: API upload simulation successful"
+        
+        # Real upload
+        try:
+            logger.info(f"Uploading torrent via API to {api_url}")
+            response = self.session.post(
+                url=api_url,
+                params={'api_token': self.api_key},
+                data=data,
+                files=files,
+                timeout=60  # Give it more time for uploads
+            )
+            
+            # Close file handles
+            for _, f in files.items():
+                f[1].close()
+            
+            if not response.ok:
+                return False, f"{response.status_code} - {response.text[:200]}"
+            return True, "API upload successful"
+            
+        except Exception as e:
+            # Ensure files are closed on exception
+            for _, f in files.items():
+                try:
+                    f[1].close()
+                except:
+                    pass
+            logger.error(f"Exception during API upload: {e}")
+            return False, f"Exception during API upload: {e}"
     
     def _upload_api(self, torrent_path: str, data: Dict[str, Any], files: Dict[str, Any]) -> Tuple[bool, str]:
         """
