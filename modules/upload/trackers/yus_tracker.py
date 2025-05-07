@@ -2,6 +2,9 @@ import os
 import requests
 import logging
 import shutil
+import re
+import time
+from urllib.parse import urljoin
 from typing import Dict, Any, Tuple
 
 logger = logging.getLogger(__name__)
@@ -10,26 +13,70 @@ class YUSTracker:
     def __init__(self, config):
         self.config = config  # Store the entire config for later use
         tr_cfg = config.get('trackers', {}).get('YUS', {})
-        self.api_key    = tr_cfg.get('api_key', '').strip()
-        self.upload_url = tr_cfg.get('upload_url','').strip()
+        self.api_key = tr_cfg.get('api_key', '').strip()
+        self.upload_url = tr_cfg.get('upload_url', '').strip()
+        self.announce_url = tr_cfg.get('announce_url', '').strip()
+        self.site_url = tr_cfg.get('url', 'https://yu-scene.net').strip()
+        self.use_api = 'api' in self.upload_url.lower()
+        self.anon = bool(tr_cfg.get('anon', False))
 
         logger.info(f"[YUS CONFIG] api_key={'SET' if self.api_key else 'MISSING'}, "
-                    f"upload_url={self.upload_url or 'MISSING'}")
+                   f"upload_url={self.upload_url or 'MISSING'}, "
+                   f"site_url={self.site_url}, "
+                   f"use_api={self.use_api}")
 
         # For debug simulation
-        self.debug_mode  = config.get('debug', False)
+        self.debug_mode = config.get('debug', False)
 
         # Create a session for connection reuse
-        self.session     = requests.Session()
+        self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': f"Music-Upload-Assistant/{config.get('app_version','0.1.0')}"
+            'User-Agent': f"Music-Upload-Assistant/{config.get('app_version','0.2.0')}",
+            'Referer': self.site_url,
+            'Origin': self.site_url
         })
 
     def is_configured(self) -> bool:
         """
-        Returns True if api_key and upload_url are present.
+        Returns True if API key and either upload_url or site_url are present.
         """
-        return bool(self.api_key and self.upload_url)
+        return bool(self.api_key and (self.upload_url or self.site_url))
+
+    def _get_csrf_token(self) -> str:
+        """
+        Get CSRF token from the site.
+        
+        Returns:
+            str: CSRF token or empty string if not found
+        """
+        try:
+            # First try to get it from the login page
+            login_url = urljoin(self.site_url, '/login')
+            logger.info(f"Getting CSRF token from {login_url}")
+            response = self.session.get(login_url)
+            
+            if response.ok:
+                csrf_match = re.search(r'name="_token"\s+value="([^"]+)"', response.text)
+                if csrf_match:
+                    return csrf_match.group(1)
+                
+            # If not found, try the upload page
+            upload_page = urljoin(self.site_url, '/torrents/create')
+            logger.info(f"Getting CSRF token from {upload_page}")
+            response = self.session.get(upload_page)
+            
+            if response.ok:
+                csrf_match = re.search(r'name="_token"\s+value="([^"]+)"', response.text)
+                if csrf_match:
+                    return csrf_match.group(1)
+            
+            # If we still can't find it, use the API key as a fallback
+            logger.warning("No CSRF token found, using API key instead")
+            return self.api_key
+            
+        except Exception as e:
+            logger.error(f"Error getting CSRF token: {e}")
+            return self.api_key
 
     def _prepare_cover_image(self, metadata: Dict[str, Any]) -> str:
         """
@@ -87,7 +134,7 @@ class YUSTracker:
                media: str = None
     ) -> Tuple[bool, str]:
         """
-        Upload a torrent file + metadata to Yu‑Scene via their JSON API.
+        Upload a torrent file + metadata to Yu‑Scene via their API or web form.
         """
         # Preconditions
         if not self.is_configured():
@@ -96,16 +143,23 @@ class YUSTracker:
             return False, f"Torrent file not found: {torrent_path}"
 
         # Build form‐data fields
-        tr_cfg    = self.config['trackers']['YUS']
-        cat_ids   = tr_cfg.get('category_ids', {})
-        type_ids  = tr_cfg.get('type_ids', {})
-        res_ids   = tr_cfg.get('resolution_ids', {})
-
+        tr_cfg = self.config.get('trackers', {}).get('YUS', {})
+        cat_ids = tr_cfg.get('category_ids', {})
+        format_ids = tr_cfg.get('format_ids', {})
+        
+        # Determine category ID - default to ALBUM (7)
+        release_type = metadata.get('release_type', 'ALBUM').upper()
+        category_id = category or cat_ids.get(release_type, cat_ids.get('ALBUM', '7'))
+        
+        # Determine format ID - default to FLAC (1)
+        format_type = metadata.get('format', 'FLAC').upper()
+        type_id = format_id or format_ids.get(format_type, format_ids.get('FLAC', '1'))
+        
         # Create proper name for upload
-        # Use release_name if available or generate a standard name
         if 'release_name' in metadata:
             upload_name = metadata['release_name']
         else:
+            # Generate a standard name
             album = metadata.get('album', 'Unknown Album')
             artist = ""
             if 'album_artists' in metadata and metadata['album_artists']:
@@ -125,27 +179,6 @@ class YUSTracker:
             if year:
                 upload_name += f" ({year})"
             upload_name += f" {format_type}"
-
-        # Build upload data
-        data = {
-            'name':           upload_name,
-            'description':    description,
-            'category_id':    category or cat_ids.get(
-                                  metadata.get('release_type','ALBUM').upper(),
-                                  cat_ids.get('ALBUM','7')
-                              ),
-            'type_id':        format_id or type_ids.get(
-                                  metadata.get('format','').upper(),
-                                  type_ids.get('FLAC','16')
-                              ),
-            'resolution_id':  media or res_ids.get(
-                                  metadata.get('resolution','1080p').upper(),
-                                  res_ids.get('1080P','3')
-                              ),
-            'anonymous':      int(metadata.get('anonymous', False)),
-            'personal_release': int(metadata.get('personalrelease', False)),
-            # You can add more flags here if needed (e.g. free, doubleup, sticky)
-        }
 
         # Prepare the file payload
         files = {
@@ -170,7 +203,7 @@ class YUSTracker:
                 elif cover_path.lower().endswith('.gif'):
                     mime_type = 'image/gif'
                     
-                files['cover'] = (
+                files['image'] = (  # Most sites use 'image' as the field name
                     os.path.basename(cover_path),
                     cover_file_handle,
                     mime_type
@@ -181,9 +214,28 @@ class YUSTracker:
                 if cover_file_handle:
                     cover_file_handle.close()
 
+        # Build common form data
+        data = {
+            'name': upload_name,
+            'description': description,
+            'category_id': category_id,
+            'type_id': type_id,
+            'anonymous': "1" if self.anon else "0"
+        }
+        
+        # Try different approaches based on the site's structure
+        if self.use_api:
+            return self._upload_api(torrent_path, data, files)
+        else:
+            return self._upload_web_form(torrent_path, data, files)
+    
+    def _upload_api(self, torrent_path: str, data: Dict[str, Any], files: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Upload using the API endpoint.
+        """
         # Debug mode: just print what would happen
         if self.debug_mode:
-            logger.info("=== DEBUG MODE ===")
+            logger.info("=== DEBUG MODE API UPLOAD ===")
             logger.info("POST URL: %s", self.upload_url)
             logger.info("PARAMS: %s", {'api_token': self.api_key})
             logger.info("DATA: %s", data)
@@ -191,77 +243,27 @@ class YUSTracker:
             # Close file handles
             for _, f in files.items():
                 f[1].close()
-            return True, "Debug mode: upload simulation successful"
-
-        # Perform the real upload
+            return True, "Debug mode: API upload simulation successful"
+        
+        # Real upload
         try:
-            # Determine if we're using the API or the web form
-            is_api = 'api' in self.upload_url.lower()
+            logger.info(f"Uploading torrent via API to {self.upload_url}")
+            response = self.session.post(
+                url=self.upload_url,
+                params={'api_token': self.api_key},
+                data=data,
+                files=files,
+                timeout=60  # Give it more time for uploads
+            )
             
-            logger.info(f"Uploading torrent to {self.upload_url} with name: {upload_name}")
-            
-            # If using API endpoint
-            if is_api:
-                response = self.session.post(
-                    url     = self.upload_url,
-                    params  = {'api_token': self.api_key},
-                    data    = data,
-                    files   = files
-                )
-            # If using web form endpoint
-            else:
-                # For web form, we need to first GET the page to get CSRF token
-                try:
-                    logger.info(f"Getting form page from {self.upload_url}")
-                    form_page = self.session.get(self.upload_url)
-                    
-                    # Extract CSRF token from the page if possible
-                    if form_page.ok:
-                        import re
-                        csrf_match = re.search(r'name="_token"\s+value="([^"]+)"', form_page.text)
-                        if csrf_match:
-                            csrf_token = csrf_match.group(1)
-                            logger.info("Found CSRF token")
-                            data['_token'] = csrf_token
-                        else:
-                            # If no CSRF token found in page, use the API key as fallback
-                            data['_token'] = self.api_key
-                            logger.warning("No CSRF token found in page, using API key instead")
-                    else:
-                        logger.warning(f"Failed to get form page: {form_page.status_code}")
-                        data['_token'] = self.api_key
-                except Exception as e:
-                    logger.error(f"Error getting form page: {e}")
-                    data['_token'] = self.api_key
-                
-                # Use a different URL for the actual submission
-                # Form URLs usually have a different submission URL
-                post_url = self.upload_url
-                if post_url.endswith('/create'):
-                    # Change /create to /store which is common in web frameworks
-                    post_url = post_url.replace('/create', '/store')
-                    logger.info(f"Changed submission URL to {post_url}")
-                
-                # Add any needed headers for form submission
-                headers = {
-                    'Referer': self.upload_url,
-                    'Origin': '/'.join(self.upload_url.split('/')[:3])  # e.g., https://yu-scene.net
-                }
-                
-                response = self.session.post(
-                    url     = post_url,
-                    headers = headers,
-                    data    = data,
-                    files   = files
-                )
             # Close file handles
             for _, f in files.items():
                 f[1].close()
-
+            
             if not response.ok:
                 return False, f"{response.status_code} - {response.text[:200]}"
-            return True, "Upload successful"
-
+            return True, "API upload successful"
+            
         except Exception as e:
             # Ensure files are closed on exception
             for _, f in files.items():
@@ -269,5 +271,87 @@ class YUSTracker:
                     f[1].close()
                 except:
                     pass
-            logger.error("Exception during upload: %s", e)
-            return False, f"Exception during upload: {e}"
+            logger.error(f"Exception during API upload: {e}")
+            return False, f"Exception during API upload: {e}"
+    
+    def _upload_web_form(self, torrent_path: str, data: Dict[str, Any], files: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Upload using the web form.
+        """
+        # Get CSRF token first
+        csrf_token = self._get_csrf_token()
+        data['_token'] = csrf_token
+        
+        # Determine upload URL
+        if not self.upload_url or '/create' in self.upload_url:
+            # If we have the create form URL, switch to the actual submission URL
+            if '/create' in self.upload_url:
+                upload_url = self.upload_url.replace('/create', '')
+            else:
+                # Default upload path
+                upload_url = urljoin(self.site_url, '/torrents')
+        else:
+            upload_url = self.upload_url
+        
+        # Debug mode: just print what would happen
+        if self.debug_mode:
+            logger.info("=== DEBUG MODE WEB FORM UPLOAD ===")
+            logger.info("POST URL: %s", upload_url)
+            logger.info("CSRF Token: %s", csrf_token[:10] + '...')
+            logger.info("DATA: %s", data)
+            logger.info("FILES: %s", list(files.keys()))
+            # Close file handles
+            for _, f in files.items():
+                f[1].close()
+            return True, "Debug mode: web form upload simulation successful"
+        
+        # Real upload
+        try:
+            logger.info(f"Uploading torrent via web form to {upload_url}")
+            
+            # Add necessary headers
+            headers = {
+                'X-CSRF-TOKEN': csrf_token,
+                'Accept': 'text/html,application/xhtml+xml,application/xml',
+                'Referer': upload_url
+            }
+            
+            response = self.session.post(
+                url=upload_url,
+                headers=headers,
+                data=data,
+                files=files,
+                allow_redirects=True,
+                timeout=60  # Give it more time for uploads
+            )
+            
+            # Close file handles
+            for _, f in files.items():
+                f[1].close()
+            
+            # Some sites respond with a redirect on success
+            if response.history:
+                logger.info(f"Request was redirected {len(response.history)} times")
+                
+            if not response.ok:
+                return False, f"{response.status_code} - {response.text[:200]}"
+            
+            # Check for error messages in HTML response
+            if 'error' in response.text.lower() or 'alert-danger' in response.text:
+                error_match = re.search(r'class=["\']alert[^>]*>(.*?)</div', response.text, re.DOTALL)
+                if error_match:
+                    error_msg = error_match.group(1)
+                    error_msg = re.sub(r'<[^>]*>', ' ', error_msg).strip()
+                    return False, f"Upload failed: {error_msg}"
+            
+            return True, "Web form upload successful"
+            
+        except Exception as e:
+            # Ensure files are closed on exception
+            for _, f in files.items():
+                try:
+                    f[1].close()
+                except:
+                    pass
+            logger.error(f"Exception during web form upload: {e}")
+            return False, f"Exception during web form upload: {e}"
