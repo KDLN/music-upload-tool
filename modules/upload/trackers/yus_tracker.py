@@ -17,7 +17,7 @@ class YUSTracker:
         self.upload_url = tr_cfg.get('upload_url', '').strip()
         self.announce_url = tr_cfg.get('announce_url', '').strip()
         self.site_url = tr_cfg.get('url', 'https://yu-scene.net').strip()
-        self.use_api = 'api' in self.upload_url.lower()
+        self.use_api = True  # Always use API
         self.anon = bool(tr_cfg.get('anon', False))
 
         logger.info(f"[YUS CONFIG] api_key={'SET' if self.api_key else 'MISSING'}, "
@@ -41,42 +41,6 @@ class YUSTracker:
         Returns True if API key and either upload_url or site_url are present.
         """
         return bool(self.api_key and (self.upload_url or self.site_url))
-
-    def _get_csrf_token(self) -> str:
-        """
-        Get CSRF token from the site.
-        
-        Returns:
-            str: CSRF token or empty string if not found
-        """
-        try:
-            # First try to get it from the login page
-            login_url = urljoin(self.site_url, '/login')
-            logger.info(f"Getting CSRF token from {login_url}")
-            response = self.session.get(login_url)
-            
-            if response.ok:
-                csrf_match = re.search(r'name="_token"\s+value="([^"]+)"', response.text)
-                if csrf_match:
-                    return csrf_match.group(1)
-                
-            # If not found, try the upload page
-            upload_page = urljoin(self.site_url, '/torrents/create')
-            logger.info(f"Getting CSRF token from {upload_page}")
-            response = self.session.get(upload_page)
-            
-            if response.ok:
-                csrf_match = re.search(r'name="_token"\s+value="([^"]+)"', response.text)
-                if csrf_match:
-                    return csrf_match.group(1)
-            
-            # If we still can't find it, use the API key as a fallback
-            logger.warning("No CSRF token found, using API key instead")
-            return self.api_key
-            
-        except Exception as e:
-            logger.error(f"Error getting CSRF token: {e}")
-            return self.api_key
 
     def _prepare_cover_image(self, metadata: Dict[str, Any]) -> str:
         """
@@ -153,7 +117,31 @@ class YUSTracker:
         
         # Determine format ID - default to FLAC (1)
         format_type = metadata.get('format', 'FLAC').upper()
-        type_id = format_id or format_ids.get(format_type, format_ids.get('FLAC', '1'))
+        
+        # Log available format IDs for debugging
+        logger.info(f"Available format IDs: {format_ids}")
+        logger.info(f"Format type: {format_type}")
+        
+        # First try to get the format ID from the format_ids mapping
+        type_id = format_id or format_ids.get(format_type)
+        
+        # If not found, use a hardcoded fallback based on common YU-Scene format IDs
+        if not type_id:
+            format_fallbacks = {
+                'FLAC': '1',
+                'MP3': '2',
+                'AAC': '3',
+                'AC3': '4',
+                'DTS': '5',
+                'OGG': '6',
+                'ALAC': '7',
+                'DSD': '8',
+                'WAV': '9',
+                'MQA': '10'
+            }
+            type_id = format_fallbacks.get(format_type, '1')  # Default to FLAC (1) if not found
+            
+        logger.info(f"Using type_id: {type_id} for format: {format_type}")
         
         # Create proper name for upload
         if 'release_name' in metadata:
@@ -232,11 +220,23 @@ class YUSTracker:
             api_url = urljoin(self.site_url, '/api/torrents/upload')
             logger.info(f"Converting to API endpoint: {api_url}")
         
+        # Prepare API parameters
+        api_params = {
+            'api_token': self.api_key
+        }
+        
+        # Debug all the API request details
+        logger.info(f"API URL: {api_url}")
+        logger.info(f"API Token: {self.api_key[:4]}****")
+        logger.info(f"Category ID: {category_id} for release type: {release_type}")
+        logger.info(f"Type ID: {type_id} for format: {format_type}")
+        logger.info(f"Upload Name: {upload_name}")
+        
         # Debug mode: just print what would happen
         if self.debug_mode:
             logger.info("=== DEBUG MODE API UPLOAD ===")
             logger.info("POST URL: %s", api_url)
-            logger.info("PARAMS: %s", {'api_token': self.api_key})
+            logger.info("PARAMS: %s", api_params)
             logger.info("DATA: %s", data)
             logger.info("FILES: %s", list(files.keys()))
             # Close file handles
@@ -249,7 +249,7 @@ class YUSTracker:
             logger.info(f"Uploading torrent via API to {api_url}")
             response = self.session.post(
                 url=api_url,
-                params={'api_token': self.api_key},
+                params=api_params,
                 data=data,
                 files=files,
                 timeout=60  # Give it more time for uploads
@@ -260,135 +260,27 @@ class YUSTracker:
                 f[1].close()
             
             if not response.ok:
-                return False, f"{response.status_code} - {response.text[:200]}"
-            return True, "API upload successful"
-            
-        except Exception as e:
-            # Ensure files are closed on exception
-            for _, f in files.items():
-                try:
-                    f[1].close()
-                except:
-                    pass
-            logger.error(f"Exception during API upload: {e}")
-            return False, f"Exception during API upload: {e}"
-    
-    def _upload_api(self, torrent_path: str, data: Dict[str, Any], files: Dict[str, Any]) -> Tuple[bool, str]:
-        """
-        Upload using the API endpoint.
-        """
-        # Debug mode: just print what would happen
-        if self.debug_mode:
-            logger.info("=== DEBUG MODE API UPLOAD ===")
-            logger.info("POST URL: %s", self.upload_url)
-            logger.info("PARAMS: %s", {'api_token': self.api_key})
-            logger.info("DATA: %s", data)
-            logger.info("FILES: %s", list(files.keys()))
-            # Close file handles
-            for _, f in files.items():
-                f[1].close()
-            return True, "Debug mode: API upload simulation successful"
-        
-        # Real upload
-        try:
-            logger.info(f"Uploading torrent via API to {self.upload_url}")
-            response = self.session.post(
-                url=self.upload_url,
-                params={'api_token': self.api_key},
-                data=data,
-                files=files,
-                timeout=60  # Give it more time for uploads
-            )
-            
-            # Close file handles
-            for _, f in files.items():
-                f[1].close()
-            
-            if not response.ok:
-                return False, f"{response.status_code} - {response.text[:200]}"
-            return True, "API upload successful"
-            
-        except Exception as e:
-            # Ensure files are closed on exception
-            for _, f in files.items():
-                try:
-                    f[1].close()
-                except:
-                    pass
-            logger.error(f"Exception during API upload: {e}")
-            return False, f"Exception during API upload: {e}"
-    
-    def _upload_web_form(self, torrent_path: str, data: Dict[str, Any], files: Dict[str, Any]) -> Tuple[bool, str]:
-        """
-        Upload using the web form.
-        """
-        # Get CSRF token first
-        csrf_token = self._get_csrf_token()
-        data['_token'] = csrf_token
-        
-        # Determine upload URL
-        if not self.upload_url or '/create' in self.upload_url:
-            # If we have the create form URL, switch to the actual submission URL
-            if '/create' in self.upload_url:
-                upload_url = self.upload_url.replace('/create', '')
-            else:
-                # Default upload path
-                upload_url = urljoin(self.site_url, '/torrents')
-        else:
-            upload_url = self.upload_url
-        
-        # Debug mode: just print what would happen
-        if self.debug_mode:
-            logger.info("=== DEBUG MODE WEB FORM UPLOAD ===")
-            logger.info("POST URL: %s", upload_url)
-            logger.info("CSRF Token: %s", csrf_token[:10] + '...')
-            logger.info("DATA: %s", data)
-            logger.info("FILES: %s", list(files.keys()))
-            # Close file handles
-            for _, f in files.items():
-                f[1].close()
-            return True, "Debug mode: web form upload simulation successful"
-        
-        # Real upload
-        try:
-            logger.info(f"Uploading torrent via web form to {upload_url}")
-            
-            # Add necessary headers
-            headers = {
-                'X-CSRF-TOKEN': csrf_token,
-                'Accept': 'text/html,application/xhtml+xml,application/xml',
-                'Referer': upload_url
-            }
-            
-            response = self.session.post(
-                url=upload_url,
-                headers=headers,
-                data=data,
-                files=files,
-                allow_redirects=True,
-                timeout=60  # Give it more time for uploads
-            )
-            
-            # Close file handles
-            for _, f in files.items():
-                f[1].close()
-            
-            # Some sites respond with a redirect on success
-            if response.history:
-                logger.info(f"Request was redirected {len(response.history)} times")
+                error_message = f"{response.status_code} - {response.text[:200]}"
                 
-            if not response.ok:
-                return False, f"{response.status_code} - {response.text[:200]}"
+                # Try to parse the JSON error response
+                try:
+                    error_data = response.json()
+                    if 'message' in error_data:
+                        error_message = error_data['message']
+                        
+                        # If there are validation errors, show them in detail
+                        if 'data' in error_data and isinstance(error_data['data'], dict):
+                            for field, errors in error_data['data'].items():
+                                if isinstance(errors, list):
+                                    error_message += f"\n- {field}: {', '.join(errors)}"
+                                else:
+                                    error_message += f"\n- {field}: {errors}"
+                except Exception as e:
+                    logger.warning(f"Could not parse error response as JSON: {e}")
+                
+                return False, error_message
             
-            # Check for error messages in HTML response
-            if 'error' in response.text.lower() or 'alert-danger' in response.text:
-                error_match = re.search(r'class=["\']alert[^>]*>(.*?)</div', response.text, re.DOTALL)
-                if error_match:
-                    error_msg = error_match.group(1)
-                    error_msg = re.sub(r'<[^>]*>', ' ', error_msg).strip()
-                    return False, f"Upload failed: {error_msg}"
-            
-            return True, "Web form upload successful"
+            return True, "API upload successful"
             
         except Exception as e:
             # Ensure files are closed on exception
@@ -397,5 +289,5 @@ class YUSTracker:
                     f[1].close()
                 except:
                     pass
-            logger.error(f"Exception during web form upload: {e}")
-            return False, f"Exception during web form upload: {e}"
+            logger.error(f"Exception during API upload: {e}")
+            return False, f"Exception during API upload: {e}"
