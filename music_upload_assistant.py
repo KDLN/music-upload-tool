@@ -28,6 +28,7 @@ from modules.utils.file_utils import (
     create_output_directory, copy_file_with_metadata
 )
 from modules.utils.naming import generate_release_name
+from modules.utils.perfect_format import generate_perfect_name, generate_perfect_description
 from modules.utils.config_manager import ConfigManager
 from modules.upload.tracker_manager import TrackerManager
 
