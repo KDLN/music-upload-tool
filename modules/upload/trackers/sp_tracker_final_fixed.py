@@ -1,21 +1,14 @@
 """
-SP tracker module with optimized cover handling for Seedpool.
+SP tracker module for Music-Upload-Assistant.
+Handles uploading to the SP tracker.
 """
 
 import os
 import requests
 import logging
 import json
-import shutil
-import tempfile
 from urllib.parse import urljoin
 from typing import Dict, Any, Tuple, Optional
-
-# Import Pillow for image resizing
-try:
-    from PIL import Image
-except ImportError:
-    Image = None
 
 from modules.upload.trackers.generic_tracker import GenericTracker
 
@@ -31,7 +24,16 @@ class SPTracker(GenericTracker):
         Args:
             config: Main configuration dictionary
         """
-        # Call parent constructor
+        # Make sure cover_field_name is set before initializing parent
+        if 'trackers' not in config:
+            config['trackers'] = {}
+        if 'SP' not in config['trackers']:
+            config['trackers']['SP'] = {}
+            
+        # Always set this field for SP regardless of the configuration
+        config['trackers']['SP']['cover_field_name'] = 'torrent-cover'
+        
+        # Call parent constructor with updated config
         super().__init__(config, "SP")
         
         # Get SP-specific configuration
@@ -48,76 +50,47 @@ class SPTracker(GenericTracker):
         # Log configuration
         logger.info(f"[SP CONFIG] Initialized with API auth type: {self.api_auth_type}")
     
-    def _prepare_cover_image(self, metadata: Dict[str, Any]) -> Optional[str]:
+    def _build_file_payload(self, torrent_path: str, cover_path: Optional[str] = None) -> Dict[str, Any]:
         """
-        Prepare cover image for upload to Seedpool.
-        Scales the image to 320px width and converts to high quality JPEG.
+        Build file payload for the SP tracker upload.
         
         Args:
-            metadata: Track or album metadata
+            torrent_path: Path to torrent file
+            cover_path: Path to cover image
             
         Returns:
-            str: Path to prepared cover image or None if not found/prepared
+            dict: Files for upload
         """
-        # Check for paths to artwork in this priority order
-        possible_paths = [
-            metadata.get('artwork_path'),
-            metadata.get('cover_art_path'),
-            metadata.get('cover_path')
-        ]
+        files = {
+            'torrent': (
+                os.path.basename(torrent_path),
+                open(torrent_path, 'rb'),
+                'application/x-bittorrent'
+            )
+        }
         
-        # Find first valid path
-        cover_path = None
-        for path in possible_paths:
-            if path and os.path.exists(path):
-                cover_path = path
-                break
-        
-        if not cover_path:
-            logger.warning("No cover image found in metadata")
-            return None
-            
-        # Create a temporary directory for cover preparation
-        temp_dir = os.path.join(self.config.get('temp_dir', 'temp'), 'cover_prep')
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Prepare output path
-        output_path = os.path.join(temp_dir, "torrent-cover.jpg")
-        
-        # Try to resize the image if PIL is available
-        if Image:
+        # Add cover file to upload if found - ALWAYS use 'torrent-cover' for SP
+        if cover_path and os.path.exists(cover_path):
             try:
-                logger.info(f"Preparing Seedpool cover image from {cover_path}")
-                
-                # Open and resize the image to 320px width
-                img = Image.open(cover_path)
-                
-                # Calculate height to maintain aspect ratio
-                width = 320
-                wpercent = (width / float(img.size[0]))
-                height = int((float(img.size[1]) * float(wpercent)))
-                
-                # Resize the image
-                img = img.resize((width, height), Image.LANCZOS)
-                
-                # Save as high quality JPEG
-                img.convert('RGB').save(output_path, "JPEG", quality=95)
-                
-                logger.info(f"Successfully prepared Seedpool cover: {output_path} (320x{height})")
-                return output_path
-                
+                cover_file_handle = open(cover_path, 'rb')
+                mime_type = 'image/jpeg'  # Default to jpeg
+                if cover_path.lower().endswith('.png'):
+                    mime_type = 'image/png'
+                elif cover_path.lower().endswith('.gif'):
+                    mime_type = 'image/gif'
+                    
+                files['torrent-cover'] = (  # SP requires 'torrent-cover' as the field name
+                    os.path.basename(cover_path),
+                    cover_file_handle,
+                    mime_type
+                )
+                logger.info(f"Added cover art to SP tracker upload as 'torrent-cover': {cover_path}")
             except Exception as e:
-                logger.error(f"Error preparing cover with PIL: {e}")
-                # Fall back to simple copy
+                logger.error(f"Error adding cover to upload: {e}")
+                if 'cover_file_handle' in locals():
+                    cover_file_handle.close()
         
-        # If PIL not available or failed, just copy the file
-        try:
-            shutil.copy2(cover_path, output_path)
-            logger.info(f"Copied cover image (no resizing): {output_path}")
-            return output_path
-        except Exception as e:
-            logger.error(f"Error copying cover image: {e}")
-            return cover_path  # Return original path as fallback
+        return files
     
     def _build_form_data(self, metadata: Dict[str, Any], description: str) -> Dict[str, Any]:
         """
@@ -222,49 +195,6 @@ class SPTracker(GenericTracker):
                 
         return data
     
-    def _build_file_payload(self, torrent_path: str, cover_path: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Build file payload for the SP tracker upload.
-        
-        Args:
-            torrent_path: Path to torrent file
-            cover_path: Path to cover image
-            
-        Returns:
-            dict: Files for upload
-        """
-        files = {
-            'torrent': (
-                os.path.basename(torrent_path),
-                open(torrent_path, 'rb'),
-                'application/x-bittorrent'
-            )
-        }
-        
-        # Add cover file to upload if found - use 'torrent-cover' field for Seedpool
-        if cover_path and os.path.exists(cover_path):
-            try:
-                cover_file_handle = open(cover_path, 'rb')
-                
-                # Always use JPEG mime type as we've prepared it as JPEG
-                mime_type = 'image/jpeg'
-                
-                # Get file size for logging
-                file_size = os.path.getsize(cover_path)
-                
-                files['torrent-cover'] = (
-                    'torrent-cover.jpg',  # Use consistent filename
-                    cover_file_handle,
-                    mime_type
-                )
-                logger.info(f"Added Seedpool cover: torrent-cover.jpg ({file_size} bytes)")
-            except Exception as e:
-                logger.error(f"Error adding cover to upload: {e}")
-                if 'cover_file_handle' in locals():
-                    cover_file_handle.close()
-        
-        return files
-    
     def upload(self,
                torrent_path: str,
                description: str,
@@ -287,13 +217,14 @@ class SPTracker(GenericTracker):
         if not os.path.exists(torrent_path):
             return False, f"Torrent file not found: {torrent_path}"
         
-        # Prepare cover art - using our optimized method for Seedpool
+        # Prepare cover art
         cover_path = self._prepare_cover_image(metadata)
         
         # Build form data
         data = self._build_form_data(metadata, description)
         
-        # Build file payload - using our custom implementation for Seedpool
+        # Build file payload 
+        # Using our custom implementation that always uses 'torrent-cover'
         files = self._build_file_payload(torrent_path, cover_path)
         
         # Debug mode: just print what would happen

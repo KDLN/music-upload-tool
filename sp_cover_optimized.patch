@@ -1,0 +1,125 @@
+diff --git a/modules/upload/trackers/sp_tracker.py b/modules/upload/trackers/sp_tracker.py
+index abcde123..01234567 100644
+--- a/modules/upload/trackers/sp_tracker.py
++++ b/modules/upload/trackers/sp_tracker.py
+@@ -12,6 +12,15 @@ from typing import Dict, Any, Tuple, Optional
+ 
+ from modules.upload.trackers.generic_tracker import GenericTracker
+ 
++# Import Pillow for image resizing
++try:
++    from PIL import Image
++    HAS_PIL = True
++    logger.info("PIL/Pillow library available for image processing")
++except ImportError:
++    Image = None
++    HAS_PIL = False
++
+ logger = logging.getLogger(__name__)
+ 
+ class SPTracker(GenericTracker):
+@@ -60,12 +69,71 @@ class SPTracker(GenericTracker):
+         # If we have an API key and a URL, we're good to go
+         return True
+     
++    def _prepare_cover_image(self, metadata: Dict[str, Any]) -> Optional[str]:
++        """
++        Prepare cover image for upload to Seedpool.
++        Scales the image to 320px width and converts to high quality JPEG.
++        
++        Args:
++            metadata: Track or album metadata
++            
++        Returns:
++            str: Path to prepared cover image or None if not found/prepared
++        """
++        # Check for paths to artwork in this priority order
++        possible_paths = [
++            metadata.get('artwork_path'),
++            metadata.get('cover_art_path'),
++            metadata.get('cover_path')
++        ]
++        
++        # Find first valid path
++        cover_path = None
++        for path in possible_paths:
++            if path and os.path.exists(path):
++                cover_path = path
++                break
++        
++        if not cover_path:
++            logger.warning("No cover image found in metadata")
++            return None
++            
++        # Create a temporary directory for cover preparation
++        temp_dir = os.path.join(self.config.get('temp_dir', 'temp'), 'cover_prep')
++        os.makedirs(temp_dir, exist_ok=True)
++        
++        # Prepare output path
++        output_path = os.path.join(temp_dir, "torrent-cover.jpg")
++        
++        # Try to resize the image if PIL is available
++        if HAS_PIL:
++            try:
++                logger.info(f"Preparing Seedpool cover image from {cover_path}")
++                
++                # Open and resize the image to 320px width
++                img = Image.open(cover_path)
++                
++                # Calculate height to maintain aspect ratio
++                width = 320
++                wpercent = (width / float(img.size[0]))
++                height = int((float(img.size[1]) * float(wpercent)))
++                
++                # Resize the image
++                img = img.resize((width, height), Image.LANCZOS)
++                
++                # Save as high quality JPEG
++                img.convert('RGB').save(output_path, "JPEG", quality=95)
++                
++                logger.info(f"Successfully prepared Seedpool cover: {output_path} (320x{height})")
++                return output_path
++                
++            except Exception as e:
++                logger.error(f"Error preparing cover with PIL: {e}")
++        
++        # If PIL not available or failed, fall back to parent's implementation
++        return super()._prepare_cover_image(metadata)
++
+     def _build_form_data(self, metadata: Dict[str, Any], description: str) -> Dict[str, Any]:
+         """
+@@ -127,13 +195,27 @@ class SPTracker(GenericTracker):
+             )
+         }
+         
+-        # Add cover image if available
++        # Add cover file to upload if found - use 'torrent-cover' field for Seedpool
+         if cover_path and os.path.exists(cover_path):
+-            files['image'] = (
+-                os.path.basename(cover_path),
+-                open(cover_path, 'rb'),
+-                'image/jpeg' if cover_path.lower().endswith('.jpg') or cover_path.lower().endswith('.jpeg') else 'image/png'
+-            )
+-            logger.info(f"Added cover art to tracker upload request: {cover_path}")
++            try:
++                cover_file_handle = open(cover_path, 'rb')
++                
++                # Determine mime type
++                if cover_path.lower().endswith('.jpg') or cover_path.lower().endswith('.jpeg'):
++                    mime_type = 'image/jpeg'
++                elif cover_path.lower().endswith('.png'):
++                    mime_type = 'image/png'
++                else:
++                    mime_type = 'image/jpeg'  # Default to JPEG
++                
++                # Get file size for logging
++                file_size = os.path.getsize(cover_path)
++                
++                files['torrent-cover'] = (
++                    'torrent-cover.jpg',  # Use consistent filename
++                    cover_file_handle,
++                    mime_type
++                )
++                logger.info(f"Added Seedpool cover: torrent-cover.jpg ({file_size} bytes)")
++            except Exception as e:
++                logger.error(f"Error adding cover to upload: {e}")
