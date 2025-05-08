@@ -69,27 +69,40 @@ class SPTracker(GenericTracker):
             dict: Form data for upload
         """
         # Get format type and create proper type_id
-        format_type = metadata.get('format', 'FLAC').upper()
-        
-        # Get format ID based on SP's requirements
-        tr_cfg = self.config.get('trackers', {}).get('SP', {})
-        format_ids = tr_cfg.get('format_ids', {})
-        type_id = format_ids.get(format_type, '1')  # Default to 1 (DISC) if not found
-        logger.info(f"Using type_id: {type_id} for format: {format_type} on SP")
+        # First check if type_id is directly provided in metadata
+        if 'type_id' in metadata:
+            # Use the directly provided type ID
+            type_id = metadata['type_id']
+            logger.info(f"Using provided type_id: {type_id} on SP")
+        else:
+            # Otherwise determine based on format
+            format_type = metadata.get('format', 'FLAC').upper()
+            
+            # Get format ID based on SP's requirements
+            tr_cfg = self.config.get('trackers', {}).get('SP', {})
+            format_ids = tr_cfg.get('format_ids', {})
+            type_id = format_ids.get(format_type, '1')  # Default to 1 (DISC) if not found
+            logger.info(f"Using type_id: {type_id} for format: {format_type} on SP")
         
         # Get resolution ID (required by SP) - default to 'OTHER'
         resolution_ids = tr_cfg.get('resolution_ids', {})
         resolution_id = resolution_ids.get('OTHER', '10')
         
         # Get category ID based on the release type (album, single, etc.)
-        # Check the configured category IDs from the tracker config
-        release_type = metadata.get('release_type', 'ALBUM').upper()
-        tr_cfg = self.config.get('trackers', {}).get('SP', {})
-        category_ids = tr_cfg.get('category_ids', {})
-        
-        # Use the category ID for the release type, defaulting to '1' (MOVIE) if not found
-        category_id = category_ids.get(release_type, '1')  
-        logger.info(f"Using category_id: {category_id} for {release_type} music content on SP")
+        # First check if a specific category_id is directly provided in metadata
+        if 'category_id' in metadata:
+            # Use the directly provided category ID
+            category_id = metadata['category_id']
+            logger.info(f"Using provided category_id: {category_id} for music content on SP")
+        else:
+            # Otherwise check the configured category IDs from the tracker config
+            release_type = metadata.get('release_type', 'ALBUM').upper()
+            tr_cfg = self.config.get('trackers', {}).get('SP', {})
+            category_ids = tr_cfg.get('category_ids', {})
+            
+            # Use the category ID for the release type, defaulting to '1' (MOVIE) if not found
+            category_id = category_ids.get(release_type, '1')  
+            logger.info(f"Using category_id: {category_id} for {release_type} music content on SP")
         
         # Create upload name, ensuring format matches actual file format
         upload_name = self._create_upload_name(metadata)
@@ -225,6 +238,9 @@ class SPTracker(GenericTracker):
         # Perform the upload
         try:
             logger.info(f"Uploading torrent to SP at {upload_url}")
+            logger.info(f"Request data: {data}")
+            logger.info(f"Request files: {list(files.keys())}")
+            logger.info(f"Request params: {params}")
             
             # Execute the upload request with params and form data
             response = self.session.post(
@@ -248,10 +264,13 @@ class SPTracker(GenericTracker):
                 # Try to parse error response as JSON
                 try:
                     error_data = response.json()
+                    logger.error(f"API error response: {error_data}")
+                    
                     if 'message' in error_data:
                         error_message = error_data['message']
                         # If there are validation errors, include them in detail
                         if 'errors' in error_data:
+                            logger.error(f"Validation errors: {error_data['errors']}")
                             for field, errors in error_data['errors'].items():
                                 if isinstance(errors, list):
                                     error_message += f"\n- {field}: {', '.join(errors)}"
