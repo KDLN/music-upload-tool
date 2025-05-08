@@ -1,21 +1,14 @@
 """
-SP tracker module with optimized cover handling for Seedpool.
+SP tracker module for Music-Upload-Assistant.
+Handles uploading to the SP tracker.
 """
 
 import os
 import requests
 import logging
 import json
-import shutil
-import tempfile
 from urllib.parse import urljoin
 from typing import Dict, Any, Tuple, Optional
-
-# Import Pillow for image resizing
-try:
-    from PIL import Image
-except ImportError:
-    Image = None
 
 from modules.upload.trackers.generic_tracker import GenericTracker
 
@@ -31,7 +24,6 @@ class SPTracker(GenericTracker):
         Args:
             config: Main configuration dictionary
         """
-        # Call parent constructor
         super().__init__(config, "SP")
         
         # Get SP-specific configuration
@@ -48,76 +40,22 @@ class SPTracker(GenericTracker):
         # Log configuration
         logger.info(f"[SP CONFIG] Initialized with API auth type: {self.api_auth_type}")
     
-    def _prepare_cover_image(self, metadata: Dict[str, Any]) -> Optional[str]:
+    def is_configured(self) -> bool:
         """
-        Prepare cover image for upload to Seedpool.
-        Scales the image to 320px width and converts to high quality JPEG.
+        Check if the SP tracker is properly configured.
         
-        Args:
-            metadata: Track or album metadata
-            
         Returns:
-            str: Path to prepared cover image or None if not found/prepared
+            bool: True if configured, False otherwise
         """
-        # Check for paths to artwork in this priority order
-        possible_paths = [
-            metadata.get('artwork_path'),
-            metadata.get('cover_art_path'),
-            metadata.get('cover_path')
-        ]
+        # For SP tracker, we only need an API key and upload URL
+        if not self.api_key:
+            return False
         
-        # Find first valid path
-        cover_path = None
-        for path in possible_paths:
-            if path and os.path.exists(path):
-                cover_path = path
-                break
-        
-        if not cover_path:
-            logger.warning("No cover image found in metadata")
-            return None
+        if not (self.upload_url or self.site_url):
+            return False
             
-        # Create a temporary directory for cover preparation
-        temp_dir = os.path.join(self.config.get('temp_dir', 'temp'), 'cover_prep')
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Prepare output path
-        output_path = os.path.join(temp_dir, "torrent-cover.jpg")
-        
-        # Try to resize the image if PIL is available
-        if Image:
-            try:
-                logger.info(f"Preparing Seedpool cover image from {cover_path}")
-                
-                # Open and resize the image to 320px width
-                img = Image.open(cover_path)
-                
-                # Calculate height to maintain aspect ratio
-                width = 320
-                wpercent = (width / float(img.size[0]))
-                height = int((float(img.size[1]) * float(wpercent)))
-                
-                # Resize the image
-                img = img.resize((width, height), Image.LANCZOS)
-                
-                # Save as high quality JPEG
-                img.convert('RGB').save(output_path, "JPEG", quality=95)
-                
-                logger.info(f"Successfully prepared Seedpool cover: {output_path} (320x{height})")
-                return output_path
-                
-            except Exception as e:
-                logger.error(f"Error preparing cover with PIL: {e}")
-                # Fall back to simple copy
-        
-        # If PIL not available or failed, just copy the file
-        try:
-            shutil.copy2(cover_path, output_path)
-            logger.info(f"Copied cover image (no resizing): {output_path}")
-            return output_path
-        except Exception as e:
-            logger.error(f"Error copying cover image: {e}")
-            return cover_path  # Return original path as fallback
+        # If we have an API key and a URL, we're good to go
+        return True
     
     def _build_form_data(self, metadata: Dict[str, Any], description: str) -> Dict[str, Any]:
         """
@@ -131,57 +69,35 @@ class SPTracker(GenericTracker):
             dict: Form data for upload
         """
         # Get format type and create proper type_id
-        # First check if type_id is directly provided in metadata
-        if 'type_id' in metadata:
-            # Use the directly provided type ID
-            type_id = metadata['type_id']
-            logger.info(f"Using provided type_id: {type_id} on SP")
-        else:
-            # Otherwise determine based on format
-            format_type = metadata.get('format', 'FLAC').upper()
-            
-            # Get format ID based on SP's requirements
-            tr_cfg = self.config.get('trackers', {}).get('SP', {})
-            format_ids = tr_cfg.get('format_ids', {})
-            type_id = format_ids.get(format_type, '1')  # Default to 1 (DISC) if not found
-            logger.info(f"Using type_id: {type_id} for format: {format_type} on SP")
+        format_type = metadata.get('format', 'FLAC').upper()
         
-        # Try to auto-detect music content for better tracker compatibility
-        is_music_content = metadata.get('format', '').upper() in ['FLAC', 'MP3', 'AAC', 'OGG', 'WAV', 'ALAC'] or \
-                          'album' in metadata or 'release_type' in metadata
+        # Get format ID based on SP's requirements
+        tr_cfg = self.config.get('trackers', {}).get('SP', {})
+        format_ids = tr_cfg.get('format_ids', {})
+        type_id = format_ids.get(format_type, '1')  # Default to 1 (DISC) if not found
+        logger.info(f"Using type_id: {type_id} for format: {format_type} on SP")
         
         # Get resolution ID (required by SP) - default to 'OTHER'
-        tr_cfg = self.config.get('trackers', {}).get('SP', {})
         resolution_ids = tr_cfg.get('resolution_ids', {})
         resolution_id = resolution_ids.get('OTHER', '10')
         
-        # Get category ID based on the release type or direct override
-        # First check if a specific category_id is directly provided in metadata
-        if 'category_id' in metadata:
-            # Use the directly provided category ID
-            category_id = metadata['category_id']
-            logger.info(f"Using provided category_id: {category_id}")
-        else:
-            # Check the configured category IDs from the tracker config
-            category_ids = tr_cfg.get('category_ids', {})
-            
-            if is_music_content and 'release_type' in metadata:
-                # Use the category ID for the specific music release type
-                release_type = metadata.get('release_type', 'ALBUM').upper()
-                category_id = category_ids.get(release_type, '1')
-                logger.info(f"Using category_id: {category_id} for {release_type} music content")
-            else:
-                # Fall back to default category (typically 1 for MOVIE)
-                category_id = '1'
-                logger.info(f"Using default category_id: {category_id}")
+        # Get category ID based on the release type (album, single, etc.)
+        # Check the configured category IDs from the tracker config
+        release_type = metadata.get('release_type', 'ALBUM').upper()
+        tr_cfg = self.config.get('trackers', {}).get('SP', {})
+        category_ids = tr_cfg.get('category_ids', {})
+        
+        # Use the category ID for the release type, defaulting to '1' (MOVIE) if not found
+        category_id = category_ids.get(release_type, '1')  
+        logger.info(f"Using category_id: {category_id} for {release_type} music content on SP")
         
         # Create upload name, ensuring format matches actual file format
         upload_name = self._create_upload_name(metadata)
-        if 'format_type' in locals() and format_type == 'FLAC' and ' MP3' in upload_name:
+        if format_type == 'FLAC' and ' MP3' in upload_name:
             upload_name = upload_name.replace(' MP3', ' FLAC')
             logger.info(f"Fixed format mismatch in release name: {upload_name}")
         
-        # Build the form data based on SP's requirements
+        # Build the form data based on SP.py requirements
         data = {
             'name': upload_name,
             'description': description,
@@ -222,49 +138,6 @@ class SPTracker(GenericTracker):
                 
         return data
     
-    def _build_file_payload(self, torrent_path: str, cover_path: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Build file payload for the SP tracker upload.
-        
-        Args:
-            torrent_path: Path to torrent file
-            cover_path: Path to cover image
-            
-        Returns:
-            dict: Files for upload
-        """
-        files = {
-            'torrent': (
-                os.path.basename(torrent_path),
-                open(torrent_path, 'rb'),
-                'application/x-bittorrent'
-            )
-        }
-        
-        # Add cover file to upload if found - use 'torrent-cover' field for Seedpool
-        if cover_path and os.path.exists(cover_path):
-            try:
-                cover_file_handle = open(cover_path, 'rb')
-                
-                # Always use JPEG mime type as we've prepared it as JPEG
-                mime_type = 'image/jpeg'
-                
-                # Get file size for logging
-                file_size = os.path.getsize(cover_path)
-                
-                files['torrent-cover'] = (
-                    'torrent-cover.jpg',  # Use consistent filename
-                    cover_file_handle,
-                    mime_type
-                )
-                logger.info(f"Added Seedpool cover: torrent-cover.jpg ({file_size} bytes)")
-            except Exception as e:
-                logger.error(f"Error adding cover to upload: {e}")
-                if 'cover_file_handle' in locals():
-                    cover_file_handle.close()
-        
-        return files
-    
     def upload(self,
                torrent_path: str,
                description: str,
@@ -287,14 +160,29 @@ class SPTracker(GenericTracker):
         if not os.path.exists(torrent_path):
             return False, f"Torrent file not found: {torrent_path}"
         
-        # Prepare cover art - using our optimized method for Seedpool
+        # Prepare cover art
         cover_path = self._prepare_cover_image(metadata)
         
         # Build form data
         data = self._build_form_data(metadata, description)
         
-        # Build file payload - using our custom implementation for Seedpool
-        files = self._build_file_payload(torrent_path, cover_path)
+        # Build file payload - SP expects only the torrent file
+        files = {
+            'torrent': (
+                os.path.basename(torrent_path),
+                open(torrent_path, 'rb'),
+                'application/x-bittorrent'
+            )
+        }
+        
+        # Add cover image if available - use 'torrent_cover' field name (UNIT3D standard)
+        if cover_path and os.path.exists(cover_path):
+            files['torrent_cover'] = (
+                os.path.basename(cover_path),
+                open(cover_path, 'rb'),
+                'image/jpeg' if cover_path.lower().endswith('.jpg') or cover_path.lower().endswith('.jpeg') else 'image/png'
+            )
+            logger.info(f"Added cover art using field name 'torrent_cover': {cover_path}")
         
         # Debug mode: just print what would happen
         if self.debug_mode:
@@ -337,9 +225,6 @@ class SPTracker(GenericTracker):
         # Perform the upload
         try:
             logger.info(f"Uploading torrent to SP at {upload_url}")
-            logger.info(f"Request data: {data}")
-            logger.info(f"Request files: {list(files.keys())}")
-            logger.info(f"Request params: {params}")
             
             # Execute the upload request with params and form data
             response = self.session.post(
@@ -351,10 +236,6 @@ class SPTracker(GenericTracker):
                 timeout=60
             )
             
-            # Check response status and content type for better error handling
-            status_code = response.status_code
-            logger.info(f"Upload response status code: {status_code}")
-            
             # Close file handles
             for _, f in files.items():
                 try:
@@ -362,46 +243,20 @@ class SPTracker(GenericTracker):
                 except:
                     pass
             
-            # Special validation error handling
-            if not response.ok and status_code == 422:
-                # Most likely a category or field validation error
-                logger.error(f"Validation error detected! Response: {response.text[:200]}")
-                
-                # Get whether this is likely music content
-                is_music_content = (
-                    metadata.get('format', '').upper() in ['FLAC', 'MP3', 'AAC', 'OGG', 'WAV', 'ALAC'] or
-                    'album' in metadata or 'release_type' in metadata
-                )
-                
-                # Check for common issues
-                if is_music_content and data.get('category_id') == '1':
-                    logger.error("This appears to be a category validation error for music content.")
-                    logger.error("The tracker may require a specific category ID for music uploads.")
-                    logger.error("Try reconfiguring your tracker settings with 'python configure.py --add SP'")
-                    logger.error("And set a different category ID for music content (often category ID 5)")
-                    return False, "Validation Error: The tracker requires a different category ID for music content. Try setting category ID 5 for music uploads."
-            
             # Process the response
             if not response.ok:
                 # Try to parse error response as JSON
                 try:
                     error_data = response.json()
-                    logger.error(f"API error response: {error_data}")
-                    
                     if 'message' in error_data:
                         error_message = error_data['message']
                         # If there are validation errors, include them in detail
                         if 'errors' in error_data:
-                            logger.error(f"Validation errors: {error_data['errors']}")
                             for field, errors in error_data['errors'].items():
                                 if isinstance(errors, list):
                                     error_message += f"\n- {field}: {', '.join(errors)}"
                                 else:
                                     error_message += f"\n- {field}: {errors}"
-                            
-                            # Suggest fixing category IDs if a category error is detected
-                            if any('category' in field.lower() for field in error_data.get('errors', {}).keys()):
-                                error_message += "\n\nThis appears to be a category validation issue. Try updating your category IDs in the configuration."
                         return False, error_message
                 except Exception:
                     # Fallback to generic error handling
