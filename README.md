@@ -167,7 +167,7 @@ This tool is compatible with UNIT3D-based trackers like YU-Scene. Key features:
 
 ## Supported Trackers
 
-- YU-Scene (YUS) - UNIT3D-based music tracker
+- YU-Scene (YUS) - UNIT3D tracker
 
 ## License
 
