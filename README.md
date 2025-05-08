@@ -15,7 +15,7 @@ A tool for preparing and uploading music files to various trackers, with a focus
 
 1. Clone the repository
    ```bash
-   git clone https://github.com/yourusername/music-upload-tool.git
+   git clone https://github.com/KDLN/music-upload-tool.git
    cd music-upload-tool
    ```
 
