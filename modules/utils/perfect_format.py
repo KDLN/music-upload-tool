@@ -285,8 +285,6 @@ def generate_perfect_description(metadata: Dict[str, Any], track_info: List[Dict
     lines.append("---------------------------------------------------------------------")
     
     # Source and technical information
-    lines.append(f"Source...............: {media} {media_img}")
-    lines.append("Included.............: NFO, M3U, LOG (Folder.auCDtect)")
     lines.append(f"Channels.............: {channels} / {sample_rate} / {bit_depth}")
     lines.append(f"Codec................: {codec_desc}")
     
