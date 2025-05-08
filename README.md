@@ -102,8 +102,6 @@ The tool supports a "perfect format" for uploading to YU-Scene, which follows th
    ---------------------------------------------------------------------
                            Artist - Album
    ---------------------------------------------------------------------
-   Source...............: WEB [img]https://i.ibb.co/9ZZCM1x/Tidal.png[/img]
-   Included.............: NFO, M3U, LOG (Folder.auCDtect)
    Channels.............: Stereo / 44100 HZ / 16 Bit
    Codec................: Free Lossless Audio Codec (FLAC)
    ---------------------------------------------------------------------
