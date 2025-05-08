@@ -81,12 +81,16 @@ def setup_tracker(config_manager: ConfigManager, tracker_id: str) -> Dict[str, A
     if url:
         tracker_config['url'] = url
     
-    # API Key
+    # API Key - FIXED: Ensure this properly asks for input and confirms when entered
     current_api_key = tracker_config.get('api_key', '')
-    print(f"API Key [{current_api_key[:4] + '****' if current_api_key else 'Not set'}]: ", end='')
-    api_key = getpass.getpass('').strip()
+    masked_key = "****" if current_api_key else "Not set"
+    print(f"API Key [{masked_key}]: ", end='')
+    api_key = input().strip()  # Changed from getpass to regular input for visibility
     if api_key:
         tracker_config['api_key'] = api_key
+        print(f"API Key set to: {api_key[:4]}{'*' * (len(api_key) - 4) if len(api_key) > 4 else ''}")
+    else:
+        print(f"API Key unchanged: {masked_key}")
     
     # Upload URL
     current_upload_url = tracker_config.get('upload_url', '')
