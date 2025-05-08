@@ -87,6 +87,60 @@ class ConfigManager:
                         'ALAC': '7',
                         'WAV': '9'
                     }
+                },
+                # SP (Seedpool) tracker template
+                'SP': {
+                    'enabled': False,  # Disabled by default until configured
+                    'name': 'Seedpool',
+                    'url': 'https://seedpool.org',
+                    'announce_url': 'https://seedpool.org/announce',
+                    'api_key': '',
+                    'upload_url': 'https://seedpool.org/api/torrents/upload',
+                    'source_name': 'seedpool.org',
+                    'anon': False,
+                    'api_auth_type': 'param',
+                    'api_format': 'form',
+                    'category_ids': {
+                        'MOVIE': '1',
+                        'TV': '2',
+                        'ANIME': '6',
+                        'SPORTS': '8',
+                        'BOXSET': '13',
+                        'ALBUM': '1',  # Default to movie category for now
+                        'SINGLE': '1',
+                        'EP': '1',
+                        'COMPILATION': '1',
+                        'SOUNDTRACK': '1',
+                        'LIVE': '1'
+                    },
+                    'format_ids': {
+                        'DISC': '1',
+                        'REMUX': '2',
+                        'ENCODE': '3',
+                        'WEBDL': '4',
+                        'WEBRIP': '5',
+                        'HDTV': '6',
+                        'FLAC': '1',  # Map to DISC for now
+                        'MP3': '3',   # Map to ENCODE for now
+                        'AAC': '3',
+                        'AC3': '3',
+                        'DTS': '3',
+                        'OGG': '3',
+                        'ALAC': '3',
+                        'WAV': '3'
+                    },
+                    'resolution_ids': {
+                        '4320p': '1',
+                        '2160p': '2',
+                        '1080p': '3',
+                        '1080i': '4',
+                        '720p': '5',
+                        '576p': '6',
+                        '576i': '7',
+                        '480p': '8',
+                        '480i': '9',
+                        'OTHER': '10'
+                    }
                 }
             },
             'torrent': {
