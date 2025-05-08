@@ -1,6 +1,6 @@
 """
-Perfect format generator for Music-Upload-Assistant.
-Creates description and naming formats that match the "perfect upload" example.
+Perfect format module for Music-Upload-Tool.
+Handles generating names and descriptions in the perfect upload format.
 """
 
 import os
