@@ -71,25 +71,20 @@ class SPTracker(GenericTracker):
         # Get format type and create proper type_id
         format_type = metadata.get('format', 'FLAC').upper()
         
-        # Use hardcoded values for specific formats
-        type_id = None
-        if format_type == 'FLAC':
-            type_id = '1'  # Adjust this for SP's actual FLAC format ID
-            logger.info(f"Using hardcoded type_id: {type_id} for FLAC on SP")
-        else:
-            # Try to get from format_ids, or use fallback
-            type_id = self.format_ids.get(format_type)
-            if not type_id:
-                format_fallbacks = {
-                    'FLAC': '1',
-                    'MP3': '2',
-                    'AAC': '3'
-                    # Add more as needed
-                }
-                type_id = format_fallbacks.get(format_type, '1')  # Default to FLAC (1) if not found
+        # Get format ID based on SP's requirements
+        tr_cfg = self.config.get('trackers', {}).get('SP', {})
+        format_ids = tr_cfg.get('format_ids', {})
+        type_id = format_ids.get(format_type, '1')  # Default to 1 (DISC) if not found
+        logger.info(f"Using type_id: {type_id} for format: {format_type} on SP")
         
-        # Get music category ID for SP - adjust as needed
-        category_id = '1'  # Adjust this for SP's actual music category ID
+        # Get resolution ID (required by SP) - default to 'OTHER'
+        resolution_ids = tr_cfg.get('resolution_ids', {})
+        resolution_id = resolution_ids.get('OTHER', '10')
+        
+        # Get category ID - for music files
+        # SP doesn't have specific music categories based on the SP.py file
+        # We'll use MOVIE (1) as a default for now
+        category_id = '1'  # SP doesn't appear to have a music category
         logger.info(f"Using category_id: {category_id} for music content on SP")
         
         # Create upload name, ensuring format matches actual file format
@@ -98,18 +93,45 @@ class SPTracker(GenericTracker):
             upload_name = upload_name.replace(' MP3', ' FLAC')
             logger.info(f"Fixed format mismatch in release name: {upload_name}")
         
-        # Build the form data
+        # Build the form data based on SP.py requirements
         data = {
             'name': upload_name,
             'description': description,
             'category_id': category_id,
             'type_id': type_id,
-            'anonymous': "1" if self.anon else "0"
+            'resolution_id': resolution_id,
+            'tmdb': '0',  # Required field but not relevant for music
+            'imdb': '0',  # Required field but not relevant for music
+            'tvdb': '0',  # Required field but not relevant for music
+            'mal': '0',   # Required field but not relevant for music
+            'igdb': '0',  # Required field but not relevant for music
+            'anonymous': "1" if self.anon else "0",
+            'stream': '0',  # No stream for music 
+            'sd': '0',      # Not SD content
+            'keywords': metadata.get('genres', []) if isinstance(metadata.get('genres', []), list) else [],
+            'personal_release': '0',
+            'internal': '0',
+            'featured': '0',
+            'free': '0',
+            'doubleup': '0',
+            'sticky': '0'
         }
         
-        # Add any SP-specific fields
-        # data['sp_specific_field'] = 'value'
+        # Try to get mediainfo if available
+        if 'mediainfo_path' in metadata and os.path.exists(metadata['mediainfo_path']):
+            try:
+                with open(metadata['mediainfo_path'], 'r', encoding='utf-8') as f:
+                    data['mediainfo'] = f.read()
+            except Exception as e:
+                logger.error(f"Error reading mediainfo: {e}")
         
+        # Extract available metadata fields
+        if 'album' in metadata:
+            # For SP, add album info to description or keywords
+            album = metadata.get('album', '')
+            if album and 'keywords' in data and isinstance(data['keywords'], list):
+                data['keywords'].append(album)
+                
         return data
     
     def upload(self,
@@ -140,8 +162,23 @@ class SPTracker(GenericTracker):
         # Build form data
         data = self._build_form_data(metadata, description)
         
-        # Build file payload
-        files = self._build_file_payload(torrent_path, cover_path)
+        # Build file payload - SP expects only the torrent file
+        files = {
+            'torrent': (
+                os.path.basename(torrent_path),
+                open(torrent_path, 'rb'),
+                'application/x-bittorrent'
+            )
+        }
+        
+        # Add cover image if available
+        if cover_path and os.path.exists(cover_path):
+            files['image'] = (
+                os.path.basename(cover_path),
+                open(cover_path, 'rb'),
+                'image/jpeg' if cover_path.lower().endswith('.jpg') or cover_path.lower().endswith('.jpeg') else 'image/png'
+            )
+            logger.info(f"Added cover art to tracker upload request: {cover_path}")
         
         # Debug mode: just print what would happen
         if self.debug_mode:
@@ -171,55 +208,25 @@ class SPTracker(GenericTracker):
         if not upload_url.startswith('http'):
             upload_url = urljoin(self.site_url, upload_url)
         
-        # Prepare auth params and headers based on API auth type
-        auth_params = {}
-        auth_headers = {}
+        # Add API token as URL parameter (following SP.py example)
+        params = {
+            'api_token': self.api_key.strip()
+        }
         
-        # For SP tracker, we always include the API key regardless of use_api flag
-        if self.api_key:
-            # Choose authentication method based on config
-            if self.api_auth_type == 'bearer':
-                # Use Bearer token in Authorization header
-                auth_headers = {
-                    'Authorization': f"Bearer {self.api_key}"
-                }
-                logger.info("Using Bearer token authentication")
-            elif self.api_auth_type == 'param':
-                # Use API key as URL parameter
-                auth_params = {'api_token': self.api_key}
-                logger.info("Using URL parameter authentication")
-            elif self.api_auth_type == 'token':
-                # Use API key as a token parameter in form data
-                data['api_token'] = self.api_key
-                logger.info("Using form token authentication")
-            else:
-                # Add API key to form data by default for SP
-                data['api_token'] = self.api_key
-                logger.info("Adding API key to form data")
-        else:
-            # If no API key but we have username/password, might need to implement form login first
-            logger.info("No API key available - form login may be required")
-        
-        # Set content type based on API format
-        if self.api_format == 'json':
-            auth_headers['Content-Type'] = 'application/json'
-            # Convert data to JSON string for some APIs
-            if files:
-                logger.info("Using multipart upload with JSON data")
-            else:
-                # For JSON-only APIs with no files
-                data = json.dumps(data)
-                logger.info("Using JSON-only upload format")
+        # Set User-Agent header according to SP.py example
+        headers = {
+            'User-Agent': f'Music-Upload-Tool/{self.config.get("app_version", "1.0.0")}'
+        }
         
         # Perform the upload
         try:
             logger.info(f"Uploading torrent to SP at {upload_url}")
             
-            # Execute the upload request
+            # Execute the upload request with params and form data
             response = self.session.post(
                 url=upload_url,
-                params=auth_params,
-                headers=auth_headers,
+                params=params,
+                headers=headers,
                 data=data,
                 files=files,
                 timeout=60
@@ -234,20 +241,41 @@ class SPTracker(GenericTracker):
             
             # Process the response
             if not response.ok:
-                error_message = self._handle_error_response(response)
-                return False, error_message
+                # Try to parse error response as JSON
+                try:
+                    error_data = response.json()
+                    if 'message' in error_data:
+                        error_message = error_data['message']
+                        # If there are validation errors, include them in detail
+                        if 'errors' in error_data:
+                            for field, errors in error_data['errors'].items():
+                                if isinstance(errors, list):
+                                    error_message += f"\n- {field}: {', '.join(errors)}"
+                                else:
+                                    error_message += f"\n- {field}: {errors}"
+                        return False, error_message
+                except Exception:
+                    # Fallback to generic error handling
+                    error_message = self._handle_error_response(response)
+                    return False, error_message
             
             # Try to parse success response
             try:
                 if 'application/json' in response.headers.get('Content-Type', ''):
                     result = response.json()
                     if isinstance(result, dict):
+                        # Check for various success indicators
                         if 'success' in result and result['success']:
                             # Extract success message if available
                             message = result.get('message', 'SP upload successful')
+                            # If there's a data field with a torrent ID, include it
+                            if 'data' in result:
+                                message += f" - Torrent ID: {result['data']}"
                             return True, message
                         elif 'message' in result:
                             return True, result['message']
+                        elif 'data' in result:
+                            return True, f"SP upload successful - {result['data']}"
             except Exception as e:
                 logger.warning(f"Could not parse success response: {e}")
             
