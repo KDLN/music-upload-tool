@@ -54,24 +54,24 @@ def generate_perfect_name(metadata: Dict[str, Any], config: Dict[str, Any]) -> s
         bit_depth = "16bit"  # Default
     
     # Get sample rate
-    sample_rate = "44.1kHz"  # Default
+    sample_rate = "44.1 kHz"  # Default with space instead of no space
     if 'sample_rate' in metadata:
         rate = metadata.get('sample_rate', 44100)
         if isinstance(rate, (int, float)):
             if rate == 44100:
-                sample_rate = "44.1kHz"
+                sample_rate = "44.1 kHz"
             elif rate == 48000:
-                sample_rate = "48kHz"
+                sample_rate = "48 kHz"
             elif rate == 88200:
-                sample_rate = "88.2kHz"
+                sample_rate = "88.2 kHz"
             elif rate == 96000:
-                sample_rate = "96kHz"
+                sample_rate = "96 kHz"
             elif rate == 176400:
-                sample_rate = "176.4kHz"
+                sample_rate = "176.4 kHz"
             elif rate == 192000:
-                sample_rate = "192kHz"
+                sample_rate = "192 kHz"
             else:
-                sample_rate = f"{rate/1000:.1f}kHz"
+                sample_rate = f"{rate/1000:.1f} kHz"
     
     # Get uploader tag
     uploader = config.get('uploader_name', 'R&H')
@@ -150,9 +150,9 @@ def generate_perfect_description(metadata: Dict[str, Any], track_info: List[Dict
     format_type = metadata.get('format', 'FLAC')
     media = metadata.get('media', config.get('upload', {}).get('default_media', 'WEB'))
     
-    sample_rate = "44100 HZ"  # Default
+    sample_rate = "44100 Hz"  # Default
     if 'sample_rate' in metadata:
-        sample_rate = f"{metadata.get('sample_rate', 44100)} HZ"
+        sample_rate = f"{metadata.get('sample_rate', 44100)} Hz"
     
     bit_depth = "16 Bit"  # Default
     if 'bit_depth' in metadata:

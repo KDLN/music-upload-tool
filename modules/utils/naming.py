@@ -74,24 +74,24 @@ def generate_release_name(metadata: Dict[str, Any], config: Dict[str, Any], opti
         bit_depth = '16'  # Default to 16-bit if not specified
     
     # Get sample rate
-    sample_rate = "44.1kHz"  # Default
+    sample_rate = "44.1 kHz"  # Default with space
     if 'sample_rate' in metadata:
         rate = metadata.get('sample_rate', 44100)
         if isinstance(rate, (int, float)):
             if rate == 44100:
-                sample_rate = "44.1kHz"
+                sample_rate = "44.1 kHz"
             elif rate == 48000:
-                sample_rate = "48kHz"
+                sample_rate = "48 kHz"
             elif rate == 88200:
-                sample_rate = "88.2kHz"
+                sample_rate = "88.2 kHz"
             elif rate == 96000:
-                sample_rate = "96kHz"
+                sample_rate = "96 kHz"
             elif rate == 176400:
-                sample_rate = "176.4kHz"
+                sample_rate = "176.4 kHz"
             elif rate == 192000:
-                sample_rate = "192kHz"
+                sample_rate = "192 kHz"
             else:
-                sample_rate = f"{rate/1000:.1f}kHz"
+                sample_rate = f"{rate/1000:.1f} kHz"
     
     # Remove spaces from artist and album
     artist = artist.replace(' ', '.')
