@@ -165,6 +165,12 @@ def setup_tracker(config_manager: ConfigManager, tracker_id: str) -> Dict[str, A
                     cat_id = input().strip()
                     if cat_id:
                         category_ids[category] = cat_id
+                        print(f"    → Set {category} to category ID: {cat_id}")
+                
+                # Display a summary after all categories are configured
+                print("\nMusic category mappings configured:")
+                for category in categories:
+                    print(f"  {category}: {category_ids.get(category, '1')}")
         else:
             print("Enter category IDs (press enter to skip):")
             
@@ -180,7 +186,8 @@ def setup_tracker(config_manager: ConfigManager, tracker_id: str) -> Dict[str, A
     
     # Would you like to configure format IDs?
     print("\nWould you like to configure format IDs? (y/n): ", end='')
-    if input().strip().lower() in ['y', 'yes']:
+    format_input = input().strip().lower()
+    if format_input in ['y', 'yes']:
         format_ids = tracker_config.get('format_ids', {})
         
         if tracker_id == 'YUS':

@@ -51,3 +51,6 @@ coverage.xml
 *.swp
 *.swo
 *~
+tests/trackers/test_sp_tracker.py
+test_category_fix.py
+docs/SP_CATEGORY_FIX.md

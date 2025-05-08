@@ -81,11 +81,15 @@ class SPTracker(GenericTracker):
         resolution_ids = tr_cfg.get('resolution_ids', {})
         resolution_id = resolution_ids.get('OTHER', '10')
         
-        # Get category ID - for music files
-        # SP doesn't have specific music categories based on the SP.py file
-        # We'll use MOVIE (1) as a default for now
-        category_id = '1'  # SP doesn't appear to have a music category
-        logger.info(f"Using category_id: {category_id} for music content on SP")
+        # Get category ID based on the release type (album, single, etc.)
+        # Check the configured category IDs from the tracker config
+        release_type = metadata.get('release_type', 'ALBUM').upper()
+        tr_cfg = self.config.get('trackers', {}).get('SP', {})
+        category_ids = tr_cfg.get('category_ids', {})
+        
+        # Use the category ID for the release type, defaulting to '1' (MOVIE) if not found
+        category_id = category_ids.get(release_type, '1')  
+        logger.info(f"Using category_id: {category_id} for {release_type} music content on SP")
         
         # Create upload name, ensuring format matches actual file format
         upload_name = self._create_upload_name(metadata)
