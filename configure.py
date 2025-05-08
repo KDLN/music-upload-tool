@@ -136,6 +136,35 @@ def setup_tracker(config_manager: ConfigManager, tracker_id: str) -> Dict[str, A
             category_ids['COMPILATION'] = '8'
             category_ids['SOUNDTRACK'] = '8'
             category_ids['LIVE'] = '8'
+        elif tracker_id == 'SP':
+            # Default SP category IDs from SP.py
+            print("Using default SP category IDs")
+            category_ids['MOVIE'] = '1'
+            category_ids['TV'] = '2'
+            category_ids['ANIME'] = '6'
+            category_ids['SPORTS'] = '8'
+            category_ids['BOXSET'] = '13'
+            
+            # Add music categories with default values
+            # Since SP doesn't have specific music categories, we'll map to MOVIE (1)
+            print("\nNote: SP doesn't have specific music categories. Using category 1 (MOVIE) for music.")
+            category_ids['ALBUM'] = '1'
+            category_ids['SINGLE'] = '1'
+            category_ids['EP'] = '1'
+            category_ids['COMPILATION'] = '1'
+            category_ids['SOUNDTRACK'] = '1'
+            category_ids['LIVE'] = '1'
+            
+            # Ask if they want to customize these
+            print("\nWould you like to customize music category mappings? (y/n): ", end='')
+            if input().strip().lower() in ['y', 'yes']:
+                categories = ['ALBUM', 'SINGLE', 'EP', 'COMPILATION', 'SOUNDTRACK', 'LIVE']
+                for category in categories:
+                    current_id = category_ids.get(category, '1')
+                    print(f"  {category} ID [{current_id}]: ", end='')
+                    cat_id = input().strip()
+                    if cat_id:
+                        category_ids[category] = cat_id
         else:
             print("Enter category IDs (press enter to skip):")
             
@@ -162,6 +191,62 @@ def setup_tracker(config_manager: ConfigManager, tracker_id: str) -> Dict[str, A
             format_ids['AAC'] = '3'
             format_ids['OGG'] = '6'
             format_ids['WAV'] = '9'
+        elif tracker_id == 'SP':
+            # Default SP format IDs from SP.py
+            print("Using default SP format IDs")
+            format_ids['DISC'] = '1'
+            format_ids['REMUX'] = '2'
+            format_ids['ENCODE'] = '3'
+            format_ids['WEBDL'] = '4'
+            format_ids['WEBRIP'] = '5'
+            format_ids['HDTV'] = '6'
+            
+            # Map music formats to video formats
+            print("\nNote: SP doesn't have specific music format IDs. Mapping to video formats:")
+            format_ids['FLAC'] = '1'  # Map to DISC
+            format_ids['MP3'] = '3'   # Map to ENCODE
+            format_ids['AAC'] = '3'   # Map to ENCODE
+            format_ids['ALAC'] = '3'  # Map to ENCODE
+            format_ids['OGG'] = '3'   # Map to ENCODE
+            format_ids['WAV'] = '3'   # Map to ENCODE
+            
+            # Ask if they want to customize these
+            print("\nWould you like to customize music format mappings? (y/n): ", end='')
+            if input().strip().lower() in ['y', 'yes']:
+                formats = ['FLAC', 'MP3', 'AAC', 'ALAC', 'OGG', 'WAV']
+                print("Available SP format IDs: DISC=1, REMUX=2, ENCODE=3, WEBDL=4, WEBRIP=5, HDTV=6")
+                for format_type in formats:
+                    current_id = format_ids.get(format_type, '3')
+                    print(f"  {format_type} ID [{current_id}]: ", end='')
+                    fmt_id = input().strip()
+                    if fmt_id:
+                        format_ids[format_type] = fmt_id
+            
+            # Add resolution IDs for SP
+            resolution_ids = tracker_config.get('resolution_ids', {})
+            resolution_ids.update({
+                '4320p': '1',
+                '2160p': '2',
+                '1080p': '3',
+                '1080i': '4',
+                '720p': '5',
+                '576p': '6',
+                '576i': '7',
+                '480p': '8',
+                '480i': '9',
+                'OTHER': '10'
+            })
+            tracker_config['resolution_ids'] = resolution_ids
+            
+            # Add API configuration for SP
+            if 'api_auth_type' not in tracker_config:
+                tracker_config['api_auth_type'] = 'param'
+            if 'api_format' not in tracker_config:
+                tracker_config['api_format'] = 'form'
+            
+            print("\nSP API configuration:")
+            print(f"  API Auth Type: {tracker_config['api_auth_type']}")
+            print(f"  API Format: {tracker_config['api_format']}")
         else:
             print("Enter format IDs (press enter to skip):")
             
@@ -245,7 +330,7 @@ def test_tracker(config_manager: ConfigManager, tracker_id: str):
     try:
         # Try to import specific tracker module
         tracker_name = f"{tracker_id.lower()}_tracker"
-        import_path = f"modules.trackers.{tracker_name}"
+        import_path = f"modules.upload.trackers.{tracker_name}"  # Updated path to modules.upload.trackers
         
         try:
             module = __import__(import_path, fromlist=[''])
