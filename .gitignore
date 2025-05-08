@@ -54,3 +54,9 @@ coverage.xml
 tests/trackers/test_sp_tracker.py
 test_category_fix.py
 docs/SP_CATEGORY_FIX.md
+debug_sp_category.py
+sp_tracker_fix.patch
+debug_sp_upload.py
+docs/SEEDPOOL_CATEGORY_FIX.md
+docs/TRACKER_TROUBLESHOOTING.md
+update_sp_categories.py
