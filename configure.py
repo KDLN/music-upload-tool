@@ -270,6 +270,23 @@ def setup_tracker(config_manager: ConfigManager, tracker_id: str) -> Dict[str, A
     # Make sure it's enabled
     tracker_config['enabled'] = True
     
+    # Configure cover art field name
+    current_cover_field = tracker_config.get('cover_field_name', 'image')
+    print(f"\nCover art field name [{current_cover_field}]: ", end='')
+    if tracker_id == 'SP':
+        print("torrent-cover (recommended for SP)")
+    else:
+        print("")
+    
+    cover_field = input().strip()
+    if cover_field:
+        tracker_config['cover_field_name'] = cover_field
+        print(f"Cover art field name set to: {cover_field}")
+    elif tracker_id == 'SP' and current_cover_field == 'image':
+        # Set default recommended value for SP
+        tracker_config['cover_field_name'] = 'torrent-cover'
+        print(f"Cover art field name set to default for SP: torrent-cover")
+    
     # Update config
     return tracker_config
 
